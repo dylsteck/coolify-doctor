@@ -26,6 +26,16 @@ func TestParseTimeString(t *testing.T) {
 	}
 }
 
+func TestDecodeHistorySamples_Null(t *testing.T) {
+	raw, err := decodeHistorySamples([]byte("null"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != nil && len(raw) != 0 {
+		t.Fatalf("got %v", raw)
+	}
+}
+
 func TestDecodeHistorySamples(t *testing.T) {
 	raw, err := decodeHistorySamples([]byte(`[{"time":"1","percent":"1"}]`))
 	if err != nil {

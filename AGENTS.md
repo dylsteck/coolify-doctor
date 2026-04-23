@@ -67,9 +67,9 @@ curl -X POST http://localhost:8080/webhook/dev \
   -d '{"success":true,"event":"deployment_success","message":"ok","application_name":"demo","environment":"prod","deployment_url":"https://example.com"}'
 ```
 
-Before committing: `go build ./... && go vet ./...`.
+Before committing: `go test ./... && go build ./... && go vet ./...`.
 
-No tests yet. If you add non-trivial logic (beyond formatting), add a `_test.go` alongside. `webhook.Format` and `telegram.parseTimeframe` are both table-testable and good first targets.
+`internal/config`, `internal/coolify` (client + Sentinel), `internal/telegram` (html + timeframes + status formatting), and `internal/webhook` (Format + handler) have table tests. If you add non-trivial logic, extend `_test.go` alongside the code.
 
 ## Gotchas
 

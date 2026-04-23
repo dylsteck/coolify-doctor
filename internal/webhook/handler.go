@@ -8,8 +8,12 @@ import (
 	"net/http"
 
 	"github.com/dylsteck/coolify-doctor/internal/coolify"
-	"github.com/dylsteck/coolify-doctor/internal/telegram"
 )
+
+// MessageSender delivers formatted HTML to Telegram (implemented by *telegram.Sender).
+type MessageSender interface {
+	SendHTML(text string) error
+}
 
 // NewHandler returns an http.Handler for POST /webhook/{secret}. The handler
 // verifies the path secret in constant time, decodes the Coolify payload,
@@ -18,7 +22,7 @@ import (
 // Returns 200 on everything except secret mismatch (401) and body-too-large
 // (handled by MaxBytesReader) — Coolify retries aggressively and we don't want
 // retry storms on our own bugs.
-func NewHandler(secret string, sender *telegram.Sender) http.Handler {
+func NewHandler(secret string, sender MessageSender) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := r.PathValue("secret")
 		if subtle.ConstantTimeCompare([]byte(got), []byte(secret)) != 1 {
