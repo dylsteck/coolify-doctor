@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -28,10 +30,16 @@ type Sample struct {
 	Value float64
 }
 
-// History fetches samples of `kind` (cpu, memory, disk) since `since`.
-// Samples are returned in the order Sentinel provides them (oldest → newest).
+// History fetches samples of `kind` (cpu, memory) since `since`.
+//
+// Sentinel responses:
+//   - `time` is an int64 Unix timestamp (seconds)
+//   - value field varies by kind: `percent` (cpu), `usedPercent` (memory/disk)
+//
+// We tolerate other shapes seen across Sentinel versions by trying several
+// value field names.
 func (s *SentinelClient) History(ctx context.Context, kind string, since time.Time) ([]Sample, error) {
-	path := fmt.Sprintf("/api/%s/history?from=%s", kind, since.UTC().Format(time.RFC3339))
+	path := fmt.Sprintf("/api/%s/history?from=%s", kind, since.UTC().Format("2006-01-02T15:04:05Z"))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.BaseURL+path, nil)
 	if err != nil {
 		return nil, err
@@ -41,7 +49,7 @@ func (s *SentinelClient) History(ctx context.Context, kind string, since time.Ti
 
 	resp, err := s.HTTP.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sentinel %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
@@ -49,36 +57,40 @@ func (s *SentinelClient) History(ctx context.Context, kind string, since time.Ti
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("sentinel %s: %s", path, resp.Status)
+		snippet := string(body)
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return nil, fmt.Errorf("sentinel %s: %s (%s)", path, resp.Status, snippet)
 	}
 
-	// Sentinel responses vary across versions; accept common shapes and
-	// normalize to []Sample. Known shapes:
-	//   [{"time":"...","value":34.2}, ...]
-	//   [{"timestamp":"...","percent":34.2}, ...]
-	//   [{"t":"...","v":34.2}, ...]
 	var raw []map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", path, err)
 	}
 
+	valueKeys := valueFieldPreference(kind)
 	out := make([]Sample, 0, len(raw))
 	for _, m := range raw {
-		t, ok := parseTime(firstString(m, "time", "timestamp", "t", "created_at"))
+		t, ok := extractTime(m)
 		if !ok {
 			continue
 		}
-		v, ok := firstFloat(m, "value", "percent", "v", "usage")
+		v, ok := firstFloat(m, valueKeys...)
 		if !ok {
 			continue
 		}
 		out = append(out, Sample{Time: t, Value: v})
 	}
+	if len(out) == 0 && len(raw) > 0 {
+		// Samples came back but we didn't recognize them. Surface the shape so
+		// the operator can diagnose.
+		return nil, fmt.Errorf("sentinel %s: %d samples but no recognizable fields (first=%v)", kind, len(raw), raw[0])
+	}
 	return out, nil
 }
 
-// Latest is a thin wrapper returning just the most recent sample from the last
-// 90 seconds; useful for "right now" readings.
+// Latest returns the most recent sample from the last 90 seconds.
 func (s *SentinelClient) Latest(ctx context.Context, kind string) (Sample, error) {
 	samples, err := s.History(ctx, kind, time.Now().Add(-90*time.Second))
 	if err != nil {
@@ -90,9 +102,62 @@ func (s *SentinelClient) Latest(ctx context.Context, kind string) (Sample, error
 	return samples[len(samples)-1], nil
 }
 
-func parseTime(s string) (time.Time, bool) {
+// valueFieldPreference returns candidate JSON keys for the numeric sample
+// value, in the order Sentinel is most likely to use them for a given kind.
+func valueFieldPreference(kind string) []string {
+	switch kind {
+	case "cpu":
+		return []string{"percent", "usedPercent", "value", "v", "usage"}
+	case "memory":
+		return []string{"usedPercent", "percent", "value", "v", "usage", "used"}
+	}
+	return []string{"value", "percent", "usedPercent", "v"}
+}
+
+func extractTime(m map[string]any) (time.Time, bool) {
+	for _, k := range []string{"time", "timestamp", "t", "created_at"} {
+		v, ok := m[k]
+		if !ok {
+			continue
+		}
+		switch x := v.(type) {
+		case float64:
+			sec := int64(x)
+			nsec := int64((x - float64(sec)) * 1e9)
+			return time.Unix(sec, nsec), true
+		case string:
+			if t, ok := parseTimeString(x); ok {
+				return t, true
+			}
+		}
+	}
+	return time.Time{}, false
+}
+
+// parseTimeString handles Sentinel's documented format: Unix milliseconds as a
+// decimal string (e.g. "1700000000000"), plus RFC3339 and layout fallbacks.
+func parseTimeString(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}, false
+	}
+	if len(s) >= 10 && len(s) <= 15 {
+		allDigit := true
+		for i := 0; i < len(s); i++ {
+			if s[i] < '0' || s[i] > '9' {
+				allDigit = false
+				break
+			}
+		}
+		if allDigit {
+			n, err := strconv.ParseInt(s, 10, 64)
+			if err == nil {
+				if n >= 1_000_000_000_000 {
+					return time.UnixMilli(n), true
+				}
+				return time.Unix(n, 0), true
+			}
+		}
 	}
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
 		if t, err := time.Parse(layout, s); err == nil {
@@ -102,15 +167,6 @@ func parseTime(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func firstString(m map[string]any, keys ...string) string {
-	for _, k := range keys {
-		if v, ok := m[k].(string); ok && v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func firstFloat(m map[string]any, keys ...string) (float64, bool) {
 	for _, k := range keys {
 		switch v := m[k].(type) {
@@ -118,6 +174,10 @@ func firstFloat(m map[string]any, keys ...string) (float64, bool) {
 			return v, true
 		case json.Number:
 			if f, err := v.Float64(); err == nil {
+				return f, true
+			}
+		case string:
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
 				return f, true
 			}
 		}

@@ -44,7 +44,7 @@ func defaultHandler(ctx context.Context, b *bot.Bot, u *models.Update) {
 		"<b>Commands</b>",
 		"/projects — list all projects",
 		"/resources [project] — list resources (optionally filtered)",
-		"/usage [timeframe] — server CPU/memory/disk (e.g. 1m, 5m, 15m, 1h, 6h, 24h)",
+		"/usage [timeframe] — server CPU/memory via Sentinel (e.g. 1m, 5m, 15m, 1h, 6h, 24h)",
 	)
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:    u.Message.Chat.ID,

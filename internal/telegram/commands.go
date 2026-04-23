@@ -148,7 +148,7 @@ func (h *Handlers) Resources(ctx context.Context, b *bot.Bot, u *models.Update) 
 	reply(ctx, b, u, strings.Join(lines, "\n"))
 }
 
-// Usage: CPU/memory/disk from Sentinel, optional timeframe arg (default 1m).
+// Usage: CPU/memory from Sentinel, optional timeframe arg (default 1m).
 func (h *Handlers) Usage(ctx context.Context, b *bot.Bot, u *models.Update) {
 	if h.Sentinel == nil {
 		reply(ctx, b, u, "Sentinel not configured; set <code>SENTINEL_TOKEN</code>.")
@@ -169,7 +169,8 @@ func (h *Handlers) Usage(ctx context.Context, b *bot.Bot, u *models.Update) {
 
 	since := time.Now().Add(-window)
 	lines := []string{fmt.Sprintf("<b>Server usage (last %s)</b>", arg)}
-	for _, kind := range []string{"cpu", "memory", "disk"} {
+	// Sentinel exposes host /api/cpu/history and /api/memory/history only (no disk).
+	for _, kind := range []string{"cpu", "memory"} {
 		line := usageLine(ctx, h.Sentinel, kind, since)
 		lines = append(lines, line)
 	}
@@ -177,7 +178,7 @@ func (h *Handlers) Usage(ctx context.Context, b *bot.Bot, u *models.Update) {
 }
 
 func usageLine(ctx context.Context, s *coolify.SentinelClient, kind string, since time.Time) string {
-	label := map[string]string{"cpu": "CPU", "memory": "Memory", "disk": "Disk"}[kind]
+	label := map[string]string{"cpu": "CPU", "memory": "Memory"}[kind]
 	samples, err := s.History(ctx, kind, since)
 	if err != nil || len(samples) == 0 {
 		return fmt.Sprintf("• %s: unavailable", label)
