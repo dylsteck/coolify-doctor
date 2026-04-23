@@ -26,6 +26,23 @@ func TestParseTimeString(t *testing.T) {
 	}
 }
 
+func TestDecodeHistorySamples(t *testing.T) {
+	raw, err := decodeHistorySamples([]byte(`[{"time":"1","percent":"1"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 1 {
+		t.Fatalf("got %d rows", len(raw))
+	}
+	wrapped, err := decodeHistorySamples([]byte(`{"data":[{"time":"1","percent":"2"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wrapped) != 1 {
+		t.Fatalf("wrapped: got %d rows", len(wrapped))
+	}
+}
+
 func TestFirstFloatStrings(t *testing.T) {
 	m := map[string]any{"percent": "25.5", "usedPercent": "50.00"}
 	if v, ok := firstFloat(m, "percent"); !ok || v != 25.5 {

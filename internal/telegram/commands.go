@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ func (h *Handlers) Projects(ctx context.Context, b *bot.Bot, u *models.Update) {
 	}
 	projects, err := h.Coolify.ListProjects(ctx)
 	if err != nil {
+		log.Printf("telegram: /projects: %v", err)
 		reply(ctx, b, u, "Failed to fetch projects: "+Esc(err.Error()))
 		return
 	}
@@ -66,11 +68,13 @@ func (h *Handlers) Resources(ctx context.Context, b *bot.Bot, u *models.Update) 
 
 	resources, err := h.Coolify.ListResources(ctx)
 	if err != nil {
+		log.Printf("telegram: /resources: ListResources: %v", err)
 		reply(ctx, b, u, "Failed to fetch resources: "+Esc(err.Error()))
 		return
 	}
 	projects, err := h.Coolify.ListProjects(ctx)
 	if err != nil {
+		log.Printf("telegram: /resources: ListProjects: %v", err)
 		reply(ctx, b, u, "Failed to fetch projects: "+Esc(err.Error()))
 		return
 	}
@@ -180,7 +184,12 @@ func (h *Handlers) Usage(ctx context.Context, b *bot.Bot, u *models.Update) {
 func usageLine(ctx context.Context, s *coolify.SentinelClient, kind string, since time.Time) string {
 	label := map[string]string{"cpu": "CPU", "memory": "Memory"}[kind]
 	samples, err := s.History(ctx, kind, since)
-	if err != nil || len(samples) == 0 {
+	if err != nil {
+		log.Printf("telegram: /usage %s: %v", kind, err)
+		return fmt.Sprintf("• %s: unavailable", label)
+	}
+	if len(samples) == 0 {
+		log.Printf("telegram: /usage %s: no samples in window (see sentinel logs for details)", kind)
 		return fmt.Sprintf("• %s: unavailable", label)
 	}
 	now := samples[len(samples)-1].Value

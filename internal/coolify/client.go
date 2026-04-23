@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -80,19 +81,36 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		log.Printf("coolify: request %s %s: %v", req.Method, path, err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
+		log.Printf("coolify: read body %s %s: %v", req.Method, path, err)
 		return err
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("coolify %s %s: %s", req.Method, path, resp.Status)
+		snippet := string(body)
+		if len(snippet) > 500 {
+			snippet = snippet[:500] + "…"
+		}
+		err := fmt.Errorf("coolify %s %s: %s (%s)", req.Method, path, resp.Status, snippet)
+		log.Printf("coolify: %v", err)
+		return err
 	}
 	if err := json.Unmarshal(body, out); err != nil {
+		log.Printf("coolify: decode %s: %v (body=%q)", path, err, firstRunes(string(body), 300))
 		return fmt.Errorf("decode %s: %w", path, err)
 	}
 	return nil
+}
+
+func firstRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }

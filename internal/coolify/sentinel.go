@@ -1,10 +1,12 @@
 package coolify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,8 +42,10 @@ type Sample struct {
 // value field names.
 func (s *SentinelClient) History(ctx context.Context, kind string, since time.Time) ([]Sample, error) {
 	path := fmt.Sprintf("/api/%s/history?from=%s", kind, since.UTC().Format("2006-01-02T15:04:05Z"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.BaseURL+path, nil)
+	url := s.BaseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
+		log.Printf("sentinel: new request %s: %v", url, err)
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+s.Token)
@@ -49,24 +53,33 @@ func (s *SentinelClient) History(ctx context.Context, kind string, since time.Ti
 
 	resp, err := s.HTTP.Do(req)
 	if err != nil {
+		log.Printf("sentinel: request %s: %v", url, err)
 		return nil, fmt.Errorf("sentinel %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
+		log.Printf("sentinel: read body %s: %v", url, err)
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
 		snippet := string(body)
-		if len(snippet) > 200 {
-			snippet = snippet[:200]
+		if len(snippet) > 500 {
+			snippet = snippet[:500] + "…"
 		}
-		return nil, fmt.Errorf("sentinel %s: %s (%s)", path, resp.Status, snippet)
+		err := fmt.Errorf("sentinel %s: %s (%s)", path, resp.Status, snippet)
+		log.Printf("sentinel: %v", err)
+		return nil, err
 	}
 
-	var raw []map[string]any
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
+	raw, decErr := decodeHistorySamples(body)
+	if decErr != nil {
+		log.Printf("sentinel: decode %s: %v (body=%q)", path, decErr, firstStringRunes(string(body), 400))
+		return nil, fmt.Errorf("decode %s: %w", path, decErr)
+	}
+	if len(raw) == 0 {
+		log.Printf("sentinel: %s: 0 history rows (no samples in time window or collection not started yet)", path)
+		return nil, nil
 	}
 
 	valueKeys := valueFieldPreference(kind)
@@ -82,12 +95,65 @@ func (s *SentinelClient) History(ctx context.Context, kind string, since time.Ti
 		}
 		out = append(out, Sample{Time: t, Value: v})
 	}
-	if len(out) == 0 && len(raw) > 0 {
-		// Samples came back but we didn't recognize them. Surface the shape so
-		// the operator can diagnose.
-		return nil, fmt.Errorf("sentinel %s: %d samples but no recognizable fields (first=%v)", kind, len(raw), raw[0])
+	if len(out) == 0 {
+		err := fmt.Errorf("sentinel %s: %d rows but no recognizable time/value fields (first=%v)", kind, len(raw), raw[0])
+		log.Printf("sentinel: %v", err)
+		return nil, err
 	}
 	return out, nil
+}
+
+// decodeHistorySamples accepts a top-level JSON array or an object with a
+// common array key (e.g. {"data": [...]}) for compatibility with proxies.
+func decodeHistorySamples(body []byte) ([]map[string]any, error) {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, nil
+	}
+	switch body[0] {
+	case '[':
+		var raw []map[string]any
+		if err := json.Unmarshal(body, &raw); err != nil {
+			return nil, err
+		}
+		return raw, nil
+	case '{':
+		var top map[string]json.RawMessage
+		if err := json.Unmarshal(body, &top); err != nil {
+			return nil, err
+		}
+		keys := []string{"data", "Data", "items", "result", "history", "samples", "metrics", "rows"}
+		for _, k := range keys {
+			v, ok := top[k]
+			if !ok {
+				continue
+			}
+			var raw []map[string]any
+			if err := json.Unmarshal(v, &raw); err != nil {
+				continue
+			}
+			return raw, nil
+		}
+		var names []string
+		for k := range top {
+			names = append(names, k)
+		}
+		return nil, fmt.Errorf("object has no array field in %v (try wrapping list as array at top level)", names)
+	case 'n':
+		// null
+		if string(body) == "null" {
+			return nil, nil
+		}
+	}
+	return nil, fmt.Errorf("unexpected JSON (want array or object, got first byte %q)", body[0])
+}
+
+func firstStringRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // Latest returns the most recent sample from the last 90 seconds.
@@ -97,7 +163,9 @@ func (s *SentinelClient) Latest(ctx context.Context, kind string) (Sample, error
 		return Sample{}, err
 	}
 	if len(samples) == 0 {
-		return Sample{}, fmt.Errorf("sentinel %s: no recent samples", kind)
+		err := fmt.Errorf("sentinel %s: no recent samples", kind)
+		log.Printf("sentinel: %v", err)
+		return Sample{}, err
 	}
 	return samples[len(samples)-1], nil
 }
@@ -125,6 +193,24 @@ func extractTime(m map[string]any) (time.Time, bool) {
 			sec := int64(x)
 			nsec := int64((x - float64(sec)) * 1e9)
 			return time.Unix(sec, nsec), true
+		case int64:
+			if x >= 1_000_000_000_000 {
+				return time.UnixMilli(x), true
+			}
+			return time.Unix(x, 0), true
+		case int:
+			xi := int64(x)
+			if xi >= 1_000_000_000_000 {
+				return time.UnixMilli(xi), true
+			}
+			return time.Unix(xi, 0), true
+		case json.Number:
+			if n, err := x.Int64(); err == nil {
+				if n >= 1_000_000_000_000 {
+					return time.UnixMilli(n), true
+				}
+				return time.Unix(n, 0), true
+			}
 		case string:
 			if t, ok := parseTimeString(x); ok {
 				return t, true
@@ -169,15 +255,24 @@ func parseTimeString(s string) (time.Time, bool) {
 
 func firstFloat(m map[string]any, keys ...string) (float64, bool) {
 	for _, k := range keys {
-		switch v := m[k].(type) {
+		v := m[k]
+		switch x := v.(type) {
 		case float64:
-			return v, true
+			return x, true
+		case float32:
+			return float64(x), true
+		case int:
+			return float64(x), true
+		case int32:
+			return float64(x), true
+		case int64:
+			return float64(x), true
 		case json.Number:
-			if f, err := v.Float64(); err == nil {
+			if f, err := x.Float64(); err == nil {
 				return f, true
 			}
 		case string:
-			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			if f, err := strconv.ParseFloat(strings.TrimSpace(x), 64); err == nil {
 				return f, true
 			}
 		}
