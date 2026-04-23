@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -98,9 +97,6 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 			snippet = snippet[:500] + "…"
 		}
 		err := fmt.Errorf("coolify %s %s: %s (%s)", req.Method, path, resp.Status, snippet)
-		if resp.StatusCode == http.StatusForbidden && strings.Contains(strings.ToLower(snippet), "not allowed") {
-			err = fmt.Errorf("%w; allow this service's source IP in Coolify (Server → General → API access / allowed networks)", err)
-		}
 		log.Printf("coolify: %v", err)
 		return err
 	}
