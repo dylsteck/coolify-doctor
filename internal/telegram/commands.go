@@ -174,8 +174,8 @@ func (h *Handlers) Usage(ctx context.Context, b *bot.Bot, u *models.Update) {
 
 	since := time.Now().Add(-window)
 	lines := []string{fmt.Sprintf("<b>Server usage (last %s)</b>", arg)}
-	// Fetch CPU and memory in parallel: each can be slow (SQLite) and
-	// cross-network to Sentinel, so back-to-back 10s timeouts were common.
+	// History can be slow (SQLite) or time out; /current is cheap. We try
+	// a bounded history fetch first, then fall back to live /current.
 	var cpuL, memL string
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -192,27 +192,38 @@ func (h *Handlers) Usage(ctx context.Context, b *bot.Bot, u *models.Update) {
 	reply(ctx, b, u, strings.Join(lines, "\n"))
 }
 
+// historyQueryBudget caps how long we wait for SQLite-backed history. After
+// that we still try GET /api/*/current (small response, usually fast).
+const historyQueryBudget = 12 * time.Second
+
 func usageLine(ctx context.Context, s *coolify.SentinelClient, kind string, since time.Time) string {
 	label := map[string]string{"cpu": "CPU", "memory": "Memory"}[kind]
-	samples, err := s.History(ctx, kind, since)
-	if err != nil {
-		log.Printf("telegram: /usage %s: %v", kind, err)
-		return fmt.Sprintf("• %s: unavailable", label)
-	}
-	if len(samples) == 0 {
-		log.Printf("telegram: /usage %s: no samples in window (see sentinel logs for details)", kind)
-		return fmt.Sprintf("• %s: unavailable", label)
-	}
-	now := samples[len(samples)-1].Value
-	var sum, peak float64
-	for _, sm := range samples {
-		sum += sm.Value
-		if sm.Value > peak {
-			peak = sm.Value
+	histCtx, cancel := context.WithTimeout(ctx, historyQueryBudget)
+	samples, err := s.History(histCtx, kind, since)
+	cancel()
+	if err == nil && len(samples) > 0 {
+		now := samples[len(samples)-1].Value
+		var sum, peak float64
+		for _, sm := range samples {
+			sum += sm.Value
+			if sm.Value > peak {
+				peak = sm.Value
+			}
 		}
+		avg := sum / float64(len(samples))
+		return fmt.Sprintf("• %s: %.1f%% now · %.1f%% avg · %.1f%% peak", label, now, avg, peak)
 	}
-	avg := sum / float64(len(samples))
-	return fmt.Sprintf("• %s: %.1f%% now · %.1f%% avg · %.1f%% peak", label, now, avg, peak)
+	if err != nil {
+		log.Printf("telegram: /usage %s history: %v", kind, err)
+	} else {
+		log.Printf("telegram: /usage %s: empty history in window, trying /current", kind)
+	}
+	live, err := s.Current(ctx, kind)
+	if err != nil {
+		log.Printf("telegram: /usage %s current: %v", kind, err)
+		return fmt.Sprintf("• %s: unavailable", label)
+	}
+	return fmt.Sprintf("• %s: %.1f%% (now)", label, live)
 }
 
 // ---- helpers ----

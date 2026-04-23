@@ -159,6 +159,50 @@ func firstStringRunes(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
+// Current returns a single on-demand reading from GET /api/{cpu|memory}/current.
+// It is much cheaper for Sentinel than History (no SQLite time-range query) and
+// should be preferred when a live percentage is enough.
+func (s *SentinelClient) Current(ctx context.Context, kind string) (float64, error) {
+	switch kind {
+	case "cpu", "memory":
+	default:
+		return 0, fmt.Errorf("unknown kind %q", kind)
+	}
+	path := fmt.Sprintf("/api/%s/current", kind)
+	url := s.BaseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.Token)
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.HTTP.Do(req)
+	if err != nil {
+		log.Printf("sentinel: current %s: %v", path, err)
+		return 0, fmt.Errorf("sentinel %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode >= 400 {
+		sn := string(body)
+		if len(sn) > 200 {
+			sn = sn[:200] + "…"
+		}
+		return 0, fmt.Errorf("sentinel %s: %s (%s)", path, resp.Status, sn)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return 0, fmt.Errorf("decode %s: %w", path, err)
+	}
+	if v, ok := firstFloat(m, valueFieldPreference(kind)...); ok {
+		return v, nil
+	}
+	return 0, fmt.Errorf("sentinel %s: no percent field in %v", path, m)
+}
+
 // Latest returns the most recent sample from the last 90 seconds.
 func (s *SentinelClient) Latest(ctx context.Context, kind string) (Sample, error) {
 	samples, err := s.History(ctx, kind, time.Now().Add(-90*time.Second))

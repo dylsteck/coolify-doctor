@@ -1,6 +1,9 @@
 package coolify
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -50,6 +53,29 @@ func TestDecodeHistorySamples(t *testing.T) {
 	}
 	if len(wrapped) != 1 {
 		t.Fatalf("wrapped: got %d rows", len(wrapped))
+	}
+}
+
+func TestCurrent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/cpu/current" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer t" {
+			t.Error("bearer")
+		}
+		_, _ = w.Write([]byte(`{"time":"1","percent":"3.5"}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := NewSentinelClient(srv.URL, "t", 5*time.Second)
+	c.HTTP = srv.Client()
+	v, err := c.Current(context.Background(), "cpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != 3.5 {
+		t.Fatalf("got %v", v)
 	}
 }
 
