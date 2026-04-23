@@ -32,7 +32,7 @@ func main() {
 		handlers.Coolify = coolify.NewClient(cfg.CoolifyURL, cfg.CoolifyToken)
 	}
 	if cfg.SentinelConfigured() {
-		handlers.Sentinel = coolify.NewSentinelClient(cfg.SentinelURL, cfg.SentinelToken)
+		handlers.Sentinel = coolify.NewSentinelClient(cfg.SentinelURL, cfg.SentinelToken, cfg.SentinelHTTPTimeout)
 	}
 	handlers.Register(b)
 

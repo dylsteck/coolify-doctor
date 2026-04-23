@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestLoad_Required(t *testing.T) {
@@ -60,8 +61,27 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.SentinelURL != "http://coolify-sentinel:8888" {
 		t.Errorf("default sentinel: got %q", cfg.SentinelURL)
 	}
+	if cfg.SentinelHTTPTimeout != 45*time.Second {
+		t.Errorf("default sentinel http timeout: got %v", cfg.SentinelHTTPTimeout)
+	}
 	if cfg.CoolifyURL != "http://x" {
 		t.Errorf("coolify url should trim trailing slash: got %q", cfg.CoolifyURL)
+	}
+}
+
+func TestLoad_SentinelHTTPTimeout(t *testing.T) {
+	clearTestEnv()
+	t.Cleanup(clearTestEnv)
+	os.Setenv("TELEGRAM_BOT_TOKEN", "t")
+	os.Setenv("TELEGRAM_CHAT_ID", "1")
+	os.Setenv("WEBHOOK_SECRET", "s")
+	os.Setenv("SENTINEL_HTTP_TIMEOUT_SECONDS", "120")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SentinelHTTPTimeout != 120*time.Second {
+		t.Errorf("got %v", cfg.SentinelHTTPTimeout)
 	}
 }
 

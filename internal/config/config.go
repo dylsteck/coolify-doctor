@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -16,6 +17,8 @@ type Config struct {
 	CoolifyToken  string
 	SentinelURL   string
 	SentinelToken string
+	// SentinelHTTPTimeout is the per-request timeout for Sentinel’s HTTP client.
+	SentinelHTTPTimeout time.Duration
 
 	Port string
 }
@@ -38,6 +41,12 @@ func Load() (*Config, error) {
 		SentinelURL:      orDefault(strings.TrimRight(strings.TrimSpace(os.Getenv("SENTINEL_URL")), "/"), "http://coolify-sentinel:8888"),
 		SentinelToken:    strings.TrimSpace(os.Getenv("SENTINEL_TOKEN")),
 		Port:             orDefault(strings.TrimSpace(os.Getenv("PORT")), "8080"),
+	}
+	cfg.SentinelHTTPTimeout = 45 * time.Second
+	if v := strings.TrimSpace(os.Getenv("SENTINEL_HTTP_TIMEOUT_SECONDS")); v != "" {
+		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
+			cfg.SentinelHTTPTimeout = time.Duration(sec) * time.Second
+		}
 	}
 
 	chatRaw := req("TELEGRAM_CHAT_ID")

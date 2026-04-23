@@ -6,6 +6,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -173,11 +174,21 @@ func (h *Handlers) Usage(ctx context.Context, b *bot.Bot, u *models.Update) {
 
 	since := time.Now().Add(-window)
 	lines := []string{fmt.Sprintf("<b>Server usage (last %s)</b>", arg)}
-	// Sentinel exposes host /api/cpu/history and /api/memory/history only (no disk).
-	for _, kind := range []string{"cpu", "memory"} {
-		line := usageLine(ctx, h.Sentinel, kind, since)
-		lines = append(lines, line)
-	}
+	// Fetch CPU and memory in parallel: each can be slow (SQLite) and
+	// cross-network to Sentinel, so back-to-back 10s timeouts were common.
+	var cpuL, memL string
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		cpuL = usageLine(ctx, h.Sentinel, "cpu", since)
+	}()
+	go func() {
+		defer wg.Done()
+		memL = usageLine(ctx, h.Sentinel, "memory", since)
+	}()
+	wg.Wait()
+	lines = append(lines, cpuL, memL)
 	reply(ctx, b, u, strings.Join(lines, "\n"))
 }
 
@@ -258,13 +269,23 @@ func commandArg(text string) string {
 }
 
 func reply(ctx context.Context, b *bot.Bot, u *models.Update, text string) {
+	if u.Message == nil {
+		return
+	}
+	if strings.TrimSpace(text) == "" {
+		log.Printf("telegram: SendMessage skipped (empty text)")
+		text = "—"
+	}
 	disabled := true
-	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:             u.Message.Chat.ID,
 		Text:               text,
 		ParseMode:          models.ParseModeHTML,
 		LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: &disabled},
 	})
+	if err != nil {
+		log.Printf("telegram: SendMessage: %v (chat=%d len=%d)", err, u.Message.Chat.ID, len(text))
+	}
 }
 
 // Supported timeframes for /usage. Kept as a list (rather than a map) so

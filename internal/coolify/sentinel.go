@@ -19,11 +19,14 @@ type SentinelClient struct {
 	HTTP    *http.Client
 }
 
-func NewSentinelClient(baseURL, token string) *SentinelClient {
+func NewSentinelClient(baseURL, token string, httpTimeout time.Duration) *SentinelClient {
+	if httpTimeout <= 0 {
+		httpTimeout = 45 * time.Second
+	}
 	return &SentinelClient{
 		BaseURL: baseURL,
 		Token:   token,
-		HTTP:    &http.Client{Timeout: 10 * time.Second},
+		HTTP:    &http.Client{Timeout: httpTimeout},
 	}
 }
 
