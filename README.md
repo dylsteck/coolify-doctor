@@ -6,17 +6,43 @@ V1 is outbound-only: Coolify fires a webhook, we format it, a Telegram bot posts
 
 ## Setup
 
-### 1. Create a Telegram bot
+### 1. Create a Telegram bot (`TELEGRAM_BOT_TOKEN`)
 
-1. Message [@BotFather](https://t.me/BotFather), run `/newbot`, grab the token.
-2. Start a chat with your new bot (or add it to a group/channel and make it admin).
-3. Get your chat ID — forward any message from the target chat to [@JsonDumpBot](https://t.me/JsonDumpBot) and copy `chat.id`.
+Message [@BotFather](https://t.me/BotFather), run `/newbot`, follow the prompts, copy the token he gives you (looks like `123456789:ABCdefGhIJKlmNOpqrsTUVwxyz`). That's your `TELEGRAM_BOT_TOKEN`.
 
-### 2. Configure
+### 2. Get your chat ID (`TELEGRAM_CHAT_ID`)
 
-Copy `.env.example` to `.env` and fill in the four values. `WEBHOOK_SECRET` should be a long random string — it's the only thing gating the webhook endpoint.
+The numeric ID of the chat the bot should post into.
 
-### 3. Run locally
+1. Start a chat with your new bot (or add it to a group/channel and make it admin).
+2. Send any message in that chat so it shows up in the bot's update queue.
+3. Open this URL in your browser, replacing `<TOKEN>` with your bot token:
+
+   ```
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+
+4. Find `"chat":{"id": …}` in the JSON response. That number is your `TELEGRAM_CHAT_ID`.
+   - DMs are positive (`123456789`)
+   - Groups/channels are negative, usually starting with `-100`
+
+Alternative: forward a message from the target chat to [@JsonDumpBot](https://t.me/JsonDumpBot) and copy `chat.id`.
+
+### 3. Generate a webhook secret (`WEBHOOK_SECRET`)
+
+Coolify doesn't sign its outbound webhooks, so the path secret is the only thing gating this endpoint. Make it long and random:
+
+```bash
+openssl rand -base64 32 | tr -d '=+/' | cut -c1-43
+```
+
+Use the output verbatim — it's URL-safe so it drops straight into the webhook URL path.
+
+### 4. Configure
+
+Copy `.env.example` to `.env` and fill in the four values from the steps above.
+
+### 5. Run locally
 
 ```bash
 go run .
@@ -30,7 +56,7 @@ curl -X POST http://localhost:8080/webhook/$WEBHOOK_SECRET \
   -d '{"success":true,"event":"deployment_success","message":"Deployment successful","application_name":"test-app","environment":"production","deployment_url":"https://example.com"}'
 ```
 
-### 4. Deploy on Coolify
+### 6. Deploy on Coolify
 
 Point Coolify at this repo, let it build the Dockerfile. Set the four env vars in the app's Environment Variables, expose port `8080`, give it a domain.
 
