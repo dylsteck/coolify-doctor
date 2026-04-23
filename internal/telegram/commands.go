@@ -22,9 +22,9 @@ type Handlers struct {
 }
 
 func (h *Handlers) Register(b *bot.Bot) {
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/projects", bot.MatchTypeCommand, h.Projects)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/resources", bot.MatchTypeCommand, h.Resources)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/usage", bot.MatchTypeCommand, h.Usage)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "projects", bot.MatchTypeCommand, h.Projects)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "resources", bot.MatchTypeCommand, h.Resources)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "usage", bot.MatchTypeCommand, h.Usage)
 }
 
 // Projects: GET /api/v1/projects → bulleted HTML list.
