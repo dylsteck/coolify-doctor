@@ -216,9 +216,24 @@ func formatResource(r coolify.Resource) string {
 		parts = append(parts, Esc(r.Type))
 	}
 	if r.Status != "" {
-		parts = append(parts, statusIcon(r.Status)+" "+Esc(r.Status))
+		shown := displayResourceStatus(r.Status)
+		parts = append(parts, statusIcon(shown)+" "+Esc(shown))
 	}
 	return JoinInline(parts...)
+}
+
+// displayResourceStatus hides Coolify's ":unknown" tail when the API has no
+// finer-grained health (common for applications), so we show "running" not
+// "running:unknown".
+func displayResourceStatus(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if a, b, ok := strings.Cut(s, ":"); ok && strings.EqualFold(strings.TrimSpace(b), "unknown") {
+		return strings.TrimSpace(a)
+	}
+	return s
 }
 
 func statusIcon(status string) string {
