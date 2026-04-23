@@ -5,71 +5,55 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	"github.com/dylsteck/coolify-doctor/internal/config"
+	"github.com/dylsteck/coolify-doctor/internal/coolify"
+	"github.com/dylsteck/coolify-doctor/internal/telegram"
+	"github.com/dylsteck/coolify-doctor/internal/webhook"
 )
 
 func main() {
-	token := mustEnv("TELEGRAM_BOT_TOKEN")
-	chatIDRaw := mustEnv("TELEGRAM_CHAT_ID")
-	secret := mustEnv("WEBHOOK_SECRET")
-	port := envOr("PORT", "8080")
-
-	chatID, err := strconv.ParseInt(chatIDRaw, 10, 64)
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("TELEGRAM_CHAT_ID must be an integer: %v", err)
+		log.Fatal(err)
 	}
 
-	b, err := bot.New(token, bot.WithSkipGetMe())
+	b, err := telegram.NewBot(cfg.TelegramBotToken, cfg.TelegramChatID)
 	if err != nil {
 		log.Fatalf("telegram: %v", err)
 	}
+	sender := telegram.NewSender(b, cfg.TelegramChatID)
 
-	disabled := true
-	send := func(text string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:             chatID,
-			Text:               text,
-			ParseMode:          models.ParseModeHTML,
-			LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: &disabled},
-		}); err != nil {
-			log.Printf("telegram send: %v", err)
-		}
+	handlers := &telegram.Handlers{}
+	if cfg.CoolifyConfigured() {
+		handlers.Coolify = coolify.NewClient(cfg.CoolifyURL, cfg.CoolifyToken)
 	}
+	if cfg.SentinelConfigured() {
+		handlers.Sentinel = coolify.NewSentinelClient(cfg.SentinelURL, cfg.SentinelToken)
+	}
+	handlers.Register(b)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
-	mux.HandleFunc("POST /webhook/{secret}", handleWebhook(secret, send))
+	mux.Handle("POST /webhook/{secret}", webhook.NewHandler(cfg.WebhookSecret, sender))
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	go telegram.Start(ctx, b)
 
 	srv := &http.Server{
-		Addr:              ":" + port,
+		Addr:              ":" + cfg.Port,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	log.Printf("coolify-doctor listening on :%s", port)
+	log.Printf("coolify-doctor listening on :%s", cfg.Port)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func mustEnv(k string) string {
-	v := os.Getenv(k)
-	if v == "" {
-		log.Fatalf("%s is required", k)
-	}
-	return v
-}
-
-func envOr(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return d
 }
