@@ -25,17 +25,21 @@ app.post("/webhook/:secret", async (c) => {
   return handleCoolifyWebhook(secret, cfg.WEBHOOK_SECRET, c.req.raw, sender);
 });
 
-app.post("/webhooks/telegram", (c) =>
-  chatBot.webhooks.telegram(c.req.raw, {
-    waitUntil: (p) => {
-      void p.catch((err) => console.error("telegram handler:", err));
+app.post("/webhooks/telegram", (c) => {
+  console.info("[telegram] webhook POST");
+  return chatBot.webhooks.telegram(c.req.raw, {
+    waitUntil: (task) => {
+      task
+        .then(() => console.info("[telegram] update handler finished"))
+        .catch((err) => console.error("[telegram] update handler error:", err));
     },
-  }),
-);
+  });
+});
 
 const port = Number.parseInt(cfg.PORT, 10) || 8080;
+
+await chatBot.initialize();
+console.log("chat instance ready (adapters initialized)");
+
 console.log("coolify-doctor listening on :" + port);
-
-void chatBot.initialize();
-
 serve({ fetch: app.fetch, port });
