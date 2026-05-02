@@ -1,128 +1,131 @@
 # coolify-doctor
 
-Thin Go service that connects Coolify to a Telegram bot.
+Lightweight **Node.js / TypeScript** service that:
 
-- **Inbound webhook receiver** — Coolify fires a webhook, we format it, the bot posts it into a chat.
-- **Read-only slash commands** — `/projects`, `/resources [project]`, `/usage [timeframe]`. No writes, no mutations; purely for checking state.
+1. **Receives Coolify webhooks** — formats events as Telegram HTML and posts them with the Bot API (same behavior as before: always `200` to Coolify except a bad path secret → `401`).
+2. **Runs a conversational Telegram bot** via [Vercel Chat SDK](https://chat-sdk.dev/) (`chat` + `@chat-adapter/telegram`). Mention the bot to start a thread; follow-ups go to the Cursor agent. Say `stop` to unsubscribe the thread.
 
-All commands only answer the configured `TELEGRAM_CHAT_ID`. Commands degrade gracefully when their dependencies aren't configured (e.g. `/usage` replies "Sentinel not configured" if `SENTINEL_TOKEN` is unset).
+Coolify notifications **do not** go through Chat SDK or Redis — only the direct `sendMessage` path — so deploy alerts keep working even if conversational subsystems fail.
+
+Conversational replies use **`@cursor/sdk`** with the **local** runtime and `AGENT_WORKSPACE` as `cwd` (typically a bind-mounted host directory). You are responsible for what that filesystem can access.
+
+Only the configured **`TELEGRAM_CHAT_ID`** is allowed for the Chat bot (same idea as the old `chatGate`).
+
+## Requirements
+
+- **Node 22+** (local or Docker)
+- **Coolify**: webhook URL and secret path segment
+- **Telegram**: bot token, bot **username** (for mentions), chat id, webhook secret token
+- **Cursor**: API key (`CURSOR_API_KEY`)
+- **Workspace**: directory path inside the container (`AGENT_WORKSPACE`), usually a volume mount
+
+Optional: **`REDIS_URL`** for persistent Chat SDK state (thread subscriptions and per-thread Cursor `agentId`). Without Redis, state is in-memory (lost on restart).
 
 ## Setup
 
-### 1. Create a Telegram bot (`TELEGRAM_BOT_TOKEN`)
+### 1. Telegram bot (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`)
 
-Message [@BotFather](https://t.me/BotFather), run `/newbot`, follow the prompts, copy the token he gives you (looks like `123456789:ABCdefGhIJKlmNOpqrsTUVwxyz`). That's your `TELEGRAM_BOT_TOKEN`.
+Create a bot with [@BotFather](https://t.me/BotFather). The **username** (without `@`) must match `TELEGRAM_BOT_USERNAME` so mentions resolve.
 
-### 2. Get your chat ID (`TELEGRAM_CHAT_ID`)
+### 2. Chat ID (`TELEGRAM_CHAT_ID`)
 
-The numeric ID of the chat the bot should post into.
+Same as before: numeric id of the chat where notifications and bot replies should go. Use `getUpdates` or [@JsonDumpBot](https://t.me/JsonDumpBot) (see older docs in git history if needed).
 
-1. Start a chat with your new bot (or add it to a group/channel and make it admin).
-2. Send any message in that chat so it shows up in the bot's update queue.
-3. Open this URL in your browser, replacing `<TOKEN>` with your bot token:
+### 3. Path secret (`WEBHOOK_SECRET`)
 
-   ```
-   https://api.telegram.org/bot<TOKEN>/getUpdates
-   ```
+Long random string. Coolify webhook URL: `https://<host>/webhook/<WEBHOOK_SECRET>`.
 
-4. Find `"chat":{"id": …}` in the JSON response. That number is your `TELEGRAM_CHAT_ID`.
-   - DMs are positive (`123456789`)
-   - Groups/channels are negative, usually starting with `-100`
+### 4. Telegram webhook secret (`TELEGRAM_WEBHOOK_SECRET_TOKEN`)
 
-Alternative: forward a message from the target chat to [@JsonDumpBot](https://t.me/JsonDumpBot) and copy `chat.id`.
+Telegram sends this as `X-Telegram-Bot-Api-Secret-Token`. Set it to a long random value and use the **same** value when calling `setWebhook`.
 
-### 3. Generate a webhook secret (`WEBHOOK_SECRET`)
-
-Coolify doesn't sign its outbound webhooks, so the path secret is the only thing gating this endpoint. Make it long and random:
+Register the webhook (replace placeholders):
 
 ```bash
-openssl rand -base64 32 | tr -d '=+/' | cut -c1-43
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"url\": \"https://<your-public-host>/webhooks/telegram\",
+    \"secret_token\": \"$TELEGRAM_WEBHOOK_SECRET_TOKEN\"
+  }"
 ```
 
-Use the output verbatim — it's URL-safe so it drops straight into the webhook URL path.
+### 5. Cursor (`CURSOR_API_KEY`, `AGENT_WORKSPACE`)
 
-### 4. (Optional) Enable `/projects` and `/resources`
-
-In Coolify, go to **Keys & Tokens → API tokens**, create a token with `read` ability, copy it. Set:
-
-- `COOLIFY_URL` — your Coolify instance URL (e.g. `https://coolify.example.com`)
-- `COOLIFY_API_TOKEN` — the token you just created
-
-Without these, `/projects` and `/resources` reply "Coolify API not configured" — the webhook receiver still works.
-
-### 5. (Optional) Enable `/usage`
-
-Open your server's settings in Coolify, go to **Sentinel**, copy the token. Set:
-
-- `SENTINEL_TOKEN` — the server's sentinel token
-- `SENTINEL_URL` — optional, defaults to `http://coolify-sentinel:8888` (correct when this service runs on the Coolify Docker network)
+Use a [Cursor API key](https://cursor.com/docs/sdk/typescript) (user or team service account). `AGENT_WORKSPACE` is the directory passed to `local.cwd` for the agent (e.g. `/workspace` in Docker with a volume mount).
 
 ### 6. Configure
 
-Copy `.env.example` to `.env` and fill in the values from the steps above.
+Copy `.env.example` to `.env` and fill values.
 
-### 7. Run locally
+## Run locally
 
 ```bash
-go run .
+npm ci
+npm run build
+export $(grep -v '^#' .env | xargs)
+npm start
 ```
 
-Test without a real Coolify:
+Test Coolify webhook path:
 
 ```bash
-curl -X POST http://localhost:8080/webhook/$WEBHOOK_SECRET \
+curl -X POST "http://localhost:8080/webhook/$WEBHOOK_SECRET" \
   -H 'Content-Type: application/json' \
-  -d '{"success":true,"event":"deployment_success","message":"Deployment successful","application_name":"test-app","environment":"production","deployment_url":"https://example.com"}'
+  -d '{"success":true,"event":"deployment_success","message":"ok","application_name":"demo","environment":"prod","deployment_url":"https://example.com"}'
 ```
 
-### 8. Deploy on Coolify
+For Telegram **polling** instead of a public HTTPS URL:
 
-Point Coolify at this repo, let it build the Dockerfile. Set the env vars in the app's Environment Variables, set **Ports Exposes** to `8080`, give it a domain.
-
-Then in Coolify: **Notifications → Webhook**, set URL to `https://<your-domain>/webhook/<WEBHOOK_SECRET>`, enable the event types you want, hit "Send Test". A `🧪 Test webhook` message should appear in Telegram.
-
-### 9. (Optional) Register commands with BotFather
-
-So Telegram shows autocomplete for your commands, open [@BotFather](https://t.me/BotFather), run `/setcommands`, choose your bot, and paste:
-
-```
-projects - list all projects
-resources - list resources across projects or one (/resources casterscan)
-usage - server CPU / memory / disk (/usage 5m)
+```bash
+TELEGRAM_ADAPTER_MODE=polling npm start
 ```
 
-## Commands
+(Delete the bot webhook first if you previously set one.)
 
-All read-only. Only respond to messages from `TELEGRAM_CHAT_ID`.
+## Docker
 
-| Command | Behavior |
-|---|---|
-| `/projects` | Lists every project on the Coolify instance. |
-| `/resources` | Lists every resource (app / db / service), grouped by project. |
-| `/resources <name>` | Filters to the project whose name matches `<name>` (case-insensitive, exact). |
-| `/usage` | Current CPU / memory / disk from Sentinel (last 1 minute). |
-| `/usage <timeframe>` | Same, over a window. Supported: `1m`, `5m`, `15m`, `1h`, `6h`, `24h`. Unknown values get an error with the supported list. |
+Build and run (example bind-mount for the agent workspace):
 
-Any other text gets a short help message listing these commands.
+```bash
+docker build -t coolify-doctor .
+docker run --rm -p 8080:8080 \
+  --env-file .env \
+  -v /path/on/host/workspace:/workspace \
+  -e AGENT_WORKSPACE=/workspace \
+  coolify-doctor
+```
+
+Ensure `TELEGRAM_ADAPTER_MODE=webhook` and your public URL routes `POST /webhooks/telegram` to the container.
+
+**Note:** Local Cursor agents inside the container need a working Cursor local runtime (network, permissions on `AGENT_WORKSPACE`). Validate in your environment before relying on production traffic.
 
 ## Routes
 
-- `POST /webhook/{secret}` — Coolify webhook receiver
-- `GET /health` — healthcheck (returns `ok`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Health check (`ok`) |
+| `POST` | `/webhook/:secret` | Coolify notifications → Telegram HTML |
+| `POST` | `/webhooks/telegram` | Telegram updates (Chat SDK) |
 
-## Supported webhook events
+## Supported Coolify webhook events
 
-All 14 Coolify webhook event types are formatted explicitly: `deployment_success`, `deployment_failed`, `status_changed`, `backup_success`, `backup_failed`, `task_success`, `task_failed`, `docker_cleanup_success`, `docker_cleanup_failed`, `server_disk_usage`, `server_reachable`, `server_unreachable`, `server_patch`, `traefik_version_outdated`, plus `test`. Unknown events fall back to a generic message with the raw payload, so nothing is silently dropped.
+Same set as the legacy formatter: `deployment_success`, `deployment_failed`, `status_changed`, backups, tasks, server events, Traefik outdated, docker cleanup, `test`. Unknown events include a truncated raw payload in `<pre>`.
 
 ## Layout
 
 ```
-main.go                         # wire-up only
-internal/
-  config/                       # env loader
-  coolify/                      # REST client + Sentinel client + webhook event type
-  telegram/                     # bot init, middleware, commands, shared HTML helpers
-  webhook/                      # POST /webhook handler + formatter
+src/
+  server.ts                 # Hono: health, Coolify webhook, Telegram webhook
+  config.ts                 # env (zod)
+  telegram/html.ts          # Esc, link, joinLines, …
+  coolify/event.ts          # webhook payload shape
+  coolify/format.ts         # Coolify → Telegram HTML
+  notify/telegram_send_html.ts
+  webhook/secrets.ts
+  webhook/coolify_webhook.ts
+  chat/create_bot.ts        # Chat SDK + Telegram adapter + handlers
+  chat/cursor_bridge.ts     # Agent.create / resume, stream to thread
 ```
 
-See `AGENTS.md` for conventions and how to extend.
+See [AGENTS.md](AGENTS.md) for conventions and extension notes.

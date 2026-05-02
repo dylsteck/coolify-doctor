@@ -1,0 +1,28 @@
+export type CoolifyEvent = {
+  success: boolean;
+  message: string;
+  event: string;
+  application_name?: string;
+  application_uuid?: string;
+  deployment_uuid?: string;
+  deployment_url?: string;
+  project?: string;
+  environment?: string;
+  pull_request_id?: unknown;
+  preview_fqdn?: string;
+  fqdn?: string;
+  url?: string;
+  database_name?: string;
+  database_uuid?: string;
+  database_type?: string;
+  frequency?: string;
+  error_output?: string;
+  task_name?: string;
+  task_uuid?: string;
+  output?: string;
+  service_uuid?: string;
+  server_name?: string;
+  server_uuid?: string;
+  disk_usage?: unknown;
+  servers?: unknown;
+};

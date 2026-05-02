@@ -4,87 +4,60 @@ Guidance for AI agents editing this repo.
 
 ## What this is
 
-`coolify-doctor` is a small Go service that connects Coolify to a Telegram bot:
+`coolify-doctor` is a **TypeScript** service (Node 22+, Hono) that:
 
-- **Webhook receiver** — forwards Coolify's outbound notifications into a Telegram chat.
-- **Read-only slash commands** — `/projects`, `/resources [project]`, `/usage [timeframe]`.
+- **Webhook receiver** — `POST /webhook/:secret`: verifies path secret (constant-time), parses Coolify JSON, formats HTML, sends via Telegram Bot API. Returns `401` only on secret mismatch; otherwise **`200` even on internal errors** so Coolify does not retry aggressively on bugs.
+- **Conversational Telegram** — Chat SDK (`chat`, `@chat-adapter/telegram`) with `onNewMention` / `onSubscribedMessage`, optional Redis-backed state, **`@cursor/sdk`** local agents against `AGENT_WORKSPACE`.
 
-No write/mutation actions. No AI.
+There are **no slash commands** in this version; infra questions go through natural language + Cursor.
 
 ## Layout
 
 ```
-main.go                         # assembly only; < 60 lines
-internal/
-  config/config.go              # Load() from env
-  coolify/
-    client.go                   # REST client: ListProjects, ListResources
-    sentinel.go                 # Sentinel client: History / Latest
-    event.go                    # Coolify webhook Event struct (payload shape)
-  telegram/
-    bot.go                      # NewBot, chatGate middleware, default help handler
-    commands.go                 # /projects, /resources, /usage handlers
-    html.go                     # Esc, Link, JoinLines, JoinInline, Truncate, PrettyEvent
-    send.go                     # Sender wrapper for outbound webhook forwarding
-  webhook/
-    handler.go                  # POST /webhook/{secret}
-    format.go                   # formatEvent switch (all 14 Coolify event types)
+src/
+  server.ts
+  config.ts
+  telegram/html.ts
+  coolify/event.ts
+  coolify/format.ts
+  notify/telegram_send_html.ts
+  webhook/secrets.ts
+  webhook/coolify_webhook.ts
+  chat/create_bot.ts
+  chat/cursor_bridge.ts
 ```
 
-Dependency graph (no cycles): `webhook → coolify + telegram`; `telegram/commands → coolify + telegram/html`; `coolify` has no internal deps.
+Use **snake_case** for **file names** (e.g. `cursor_bridge.ts`, `coolify_webhook.ts`).
 
 ## Conventions
 
-- **Go version**: 1.25.x. `ServeMux` path patterns (`"POST /webhook/{secret}"`, `r.PathValue(...)`) require 1.22+.
-- **Dependencies**: only `github.com/go-telegram/bot`. No router — stdlib mux is enough.
-- **HTML parse mode everywhere**: always route untrusted strings through `telegram.Esc(...)` before concatenating into message text. URL hrefs go through `telegram.Link(...)` which escapes them too.
-- **Error handling**: return 200 to Coolify on our own failures (bad JSON, Telegram API errors) and log. Coolify retries aggressively; we don't want retry storms on our bugs. Only return 401 on a bad path secret.
-- **Command handlers**: every command checks whether its dependencies (Coolify client, Sentinel client) are configured and replies with an inline "not configured" message if not. Never panic, never silently drop.
-- **No unnecessary comments.** Only write a comment when the *why* is non-obvious — hidden constraint, subtle invariant, workaround.
+- **Module format**: ESM (`"type": "module"`), imports use `.js` extensions pointing at emitted files.
+- **HTML for Coolify notifications**: route untrusted strings through `telegram/html.ts` helpers (`esc`, `link`, …) before building parse_mode HTML.
+- **Coolify webhook**: never return non-200 to Coolify for JSON/Telegram failures; log and `200`.
+- **Telegram chat allowlist**: `create_bot.ts` compares `thread.channelId` to `TELEGRAM_CHAT_ID`. Do not remove without a replacement gate.
+- **Cursor agents**: use `Agent.create` / `Agent.resume`, always `await agent[Symbol.asyncDispose]()` in a `finally` (or `await using`). Distinguish `CursorAgentError` (startup) vs `run.wait()` `status === "error"` (run failed).
+- **Local agent options**: pass `local: { cwd, settingSources: [] }` for services unless you intentionally want ambient Cursor settings.
+- **No unnecessary comments** — only when the why is non-obvious.
 
-## Adding a new read-only command
+## Adding a Coolify webhook event variant
 
-1. Add a method to `(*Handlers)` in `internal/telegram/commands.go`.
-2. Register it in `(*Handlers).Register(b)`.
-3. If it needs a new Coolify endpoint, add a thin method on `coolify.Client` in `internal/coolify/client.go`.
-4. Use the shared `telegram.Esc`, `telegram.JoinLines`, `telegram.Link` helpers so formatting is consistent with the webhook formatter.
-5. Add a line to the Commands table in `README.md` and (optionally) update the `/setcommands` list there.
-
-Do *not* add write actions (restart, stop, redeploy) without explicit product approval — the whole surface is scoped to information, not control.
-
-## Adding a new webhook event
-
-1. If it has new fields, add them to `coolify.Event` in `internal/coolify/event.go` with `json:"...,omitempty"` tags.
-2. Add a `case "your_event":` branch to `Format` in `internal/webhook/format.go` using the `telegram` helpers.
-3. The unknown-event fallback already surfaces the raw payload inside `<pre>`, so untouched events aren't silently dropped — they just look uglier.
+1. Extend `CoolifyEvent` in `src/coolify/event.ts` if new fields are needed (match Coolify JSON keys).
+2. Add a branch in `formatEvent` in `src/coolify/format.ts`.
+3. Extend `src/coolify/format.test.ts` if useful.
 
 ## Running & testing
 
 ```bash
-TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... WEBHOOK_SECRET=dev go run .
-curl -X POST http://localhost:8080/webhook/dev \
-  -H 'Content-Type: application/json' \
-  -d '{"success":true,"event":"deployment_success","message":"ok","application_name":"demo","environment":"prod","deployment_url":"https://example.com"}'
+npm ci
+npm run build
+npm test
 ```
 
-Before committing: `go test ./... && go build ./... && go vet ./...`.
-
-`internal/config`, `internal/coolify` (client + Sentinel), `internal/telegram` (html + timeframes + status formatting), and `internal/webhook` (Format + handler) have table tests. If you add non-trivial logic, extend `_test.go` alongside the code.
+Manual run: set env from `.env`, then `npm start` (after `npm run build`).
 
 ## Gotchas
 
-- **Coolify webhooks are unsigned.** The path secret (`/webhook/{secret}`) is our only auth — compared in constant time via `crypto/subtle`.
-- **`bot.WithSkipGetMe()` means a bad token won't fail at startup.** The first call to `SendMessage` or `getUpdates` will log an error instead. Acceptable trade for faster boot and not crashing on transient Telegram issues.
-- **`Sentinel.History` accepts multiple JSON shapes** because Sentinel's response format has shifted across versions (`time`/`timestamp`/`t`, `value`/`percent`/`v`). If you extend it, keep that tolerance.
-- **Body size limit on webhook**: `http.MaxBytesReader(w, r.Body, 1<<20)`. Coolify payloads are small (~1 KB), but `error_output` / `output` fields can balloon. Bump if you see truncation in logs.
-- **Commands run in goroutines** (the bot library handles this) — don't share mutable state between command invocations.
-- **`chatGate` middleware drops any update not from `TELEGRAM_CHAT_ID`.** Do not remove it without adding an equivalent check — otherwise anyone who guesses the bot username can probe the Coolify infra.
-
-## Roadmap
-
-1. **Proactive Sentinel alerts** — add a ticker goroutine in `main.go` that polls `sentinel.Latest` every N seconds and calls `sender.SendHTML` on threshold breach. Threshold config via new env (`CPU_THRESHOLD`, `MEM_THRESHOLD`).
-2. **`/logs <app>`** — still read-only, GET `/api/v1/applications/{uuid}/logs`, tail the last ~50 lines inside `<pre>`.
-3. **Multi-server `/usage`** — accept `SENTINEL_TOKENS=server1:token1,server2:token2`, hit each Sentinel, label output.
-4. **AI chat** — a `/ask` command that pipes Sentinel + resources + recent events into Anthropic's API as context. Add `ANTHROPIC_API_KEY`. Still read-only — no tool use that mutates.
-
-Each step is additive and does not require touching the webhook receiver.
+- **Coolify webhooks are unsigned** — path secret is the only auth on `/webhook/:secret`.
+- **Telegram webhook** must use the same `secret_token` as `TELEGRAM_WEBHOOK_SECRET_TOKEN`.
+- **`REDIS_URL`**: without it, Chat subscriptions and stored `cursorAgentId` are memory-only.
+- **Cursor local in Docker** may need extra validation (permissions, CLI/runtime expectations) depending on image and mount.

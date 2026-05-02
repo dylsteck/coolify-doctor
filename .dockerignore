@@ -1,5 +1,14 @@
 .git
 .env
+.env.*
 *.md
-!go.mod
-!go.sum
+!README.md
+node_modules
+dist
+coverage
+.vscode
+.cursor
+internal
+main.go
+go.mod
+go.sum

@@ -1,0 +1,42 @@
+{
+  "name": "coolify-doctor",
+  "version": "1.0.0",
+  "description": "TypeScript service: Coolify webhooks to Telegram, conversational Telegram via Chat SDK and Cursor agents.",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dylsteck/coolify-doctor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dylsteck/coolify-doctor/issues"
+  },
+  "homepage": "https://github.com/dylsteck/coolify-doctor#readme",
+  "dependencies": {
+    "@chat-adapter/state-memory": "^4.27.0",
+    "@chat-adapter/state-redis": "^4.27.0",
+    "@chat-adapter/telegram": "^4.27.0",
+    "@cursor/sdk": "^1.0.12",
+    "@hono/node-server": "^2.0.1",
+    "chat": "^4.27.0",
+    "hono": "^4.12.16",
+    "zod": "^4.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

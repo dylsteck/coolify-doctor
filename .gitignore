@@ -3,3 +3,8 @@
 .env.*.local
 coolify-doctor
 /out
+node_modules
+dist
+vitest.config.js
+vitest.config.js.map
+vitest.config.d.ts
