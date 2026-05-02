@@ -34,7 +34,7 @@ Use **snake_case** for **file names** (e.g. `cursor_bridge.ts`, `coolify_webhook
 - **Module format**: ESM (`"type": "module"`), imports use `.js` extensions pointing at emitted files.
 - **HTML for Coolify notifications**: route untrusted strings through `telegram/html.ts` helpers (`esc`, `link`, …) before building parse_mode HTML.
 - **Coolify webhook**: never return non-200 to Coolify for JSON/Telegram failures; log and `200`.
-- **Telegram chat allowlist**: `create_bot.ts` compares `thread.channelId` to `TELEGRAM_CHAT_ID`. Do not remove without a replacement gate.
+- **Telegram chat allowlist**: Chat SDK uses `telegram:<chatId>` while env is usually a bare id — `telegram_allowlist.ts` normalizes before compare.
 - **Cursor agents**: use `Agent.create` / `Agent.resume`, always `await agent[Symbol.asyncDispose]()` in a `finally` (or `await using`). Distinguish `CursorAgentError` (startup) vs `run.wait()` `status === "error"` (run failed).
 - **Local agent options**: pass `local: { cwd, settingSources: [] }` for services unless you intentionally want ambient Cursor settings.
 - **No unnecessary comments** — only when the why is non-obvious.
@@ -59,5 +59,5 @@ Manual run: set env from `.env`, then `npm start` (after `npm run build`).
 
 - **Coolify webhooks are unsigned** — path secret is the only auth on `/webhook/:secret`.
 - **Telegram webhook** must use the same `secret_token` as `TELEGRAM_WEBHOOK_SECRET_TOKEN`.
-- **`REDIS_URL`**: without it, Chat subscriptions and stored `cursorAgentId` are memory-only.
+- **Redis**: `docker/entrypoint.sh` always starts Redis on `127.0.0.1:6379` before Node. `create_bot.ts` uses `createRedisState({ url: "redis://127.0.0.1:6379" })`. For local `npm start`, run Redis on that address (see README).
 - **Cursor local in Docker** may need extra validation (permissions, CLI/runtime expectations) depending on image and mount.

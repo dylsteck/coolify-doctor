@@ -22,7 +22,6 @@
   },
   "homepage": "https://github.com/dylsteck/coolify-doctor#readme",
   "dependencies": {
-    "@chat-adapter/state-memory": "^4.27.0",
     "@chat-adapter/state-redis": "^4.27.0",
     "@chat-adapter/telegram": "^4.27.0",
     "@cursor/sdk": "^1.0.12",

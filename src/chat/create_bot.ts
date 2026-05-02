@@ -1,19 +1,16 @@
 import { createTelegramAdapter } from "@chat-adapter/telegram";
-import { createMemoryState } from "@chat-adapter/state-memory";
 import { createRedisState } from "@chat-adapter/state-redis";
-import { Chat, type MessageContext } from "chat";
+import { Chat, type Message, type MessageContext, type Thread } from "chat";
 import type { Config } from "../config.js";
 import { runCursorOnThread, type ThreadState } from "./cursor_bridge.js";
+import { isAllowedTelegramChat } from "./telegram_allowlist.js";
+import { withRenewingTyping } from "./renew_typing.js";
 
-function createStateAdapter(cfg: Config) {
-  if (cfg.REDIS_URL) {
-    return createRedisState({ url: cfg.REDIS_URL });
-  }
-  return createMemoryState();
-}
+/** In Docker, entrypoint starts Redis here before Node. Local dev: run Redis on 6379 or use Docker. */
+const CHAT_REDIS_URL = "redis://127.0.0.1:6379";
 
 export function createChatBot(cfg: Config) {
-  const state = createStateAdapter(cfg);
+  const state = createRedisState({ url: CHAT_REDIS_URL });
   const telegram = createTelegramAdapter({ mode: cfg.TELEGRAM_ADAPTER_MODE });
 
   const bot = new Chat({
@@ -26,8 +23,8 @@ export function createChatBot(cfg: Config) {
 
   const allowedChatId = cfg.TELEGRAM_CHAT_ID;
 
-  function allowedChannel(threadChannelId: string): boolean {
-    return threadChannelId === allowedChatId;
+  function allowedChannel(channelId: string): boolean {
+    return isAllowedTelegramChat(channelId, allowedChatId);
   }
 
   function buildPrompt(text: string, context?: MessageContext): string {
@@ -41,7 +38,7 @@ export function createChatBot(cfg: Config) {
     return text;
   }
 
-  bot.onNewMention(async (thread, message, context) => {
+  async function handleNewConversation(thread: Thread<ThreadState>, message: Message, context?: MessageContext) {
     if (!allowedChannel(thread.channelId)) {
       await thread.post("This bot only responds in the configured admin chat.");
       return;
@@ -52,12 +49,26 @@ export function createChatBot(cfg: Config) {
         `You sent ${context.totalSinceLastHandler} messages while I was starting. Responding to your latest.`,
       );
     }
-    await thread.startTyping();
     const prompt = buildPrompt(message.text, context);
-    await runCursorOnThread(thread, prompt, {
-      apiKey: cfg.CURSOR_API_KEY,
-      cwd: cfg.AGENT_WORKSPACE,
-    });
+    await withRenewingTyping(thread, () =>
+      runCursorOnThread(thread, prompt, {
+        apiKey: cfg.CURSOR_API_KEY,
+        cwd: cfg.AGENT_WORKSPACE,
+      }),
+    );
+  }
+
+  /** Groups / channels: first ping is usually an @mention. */
+  bot.onNewMention(async (thread, message, context) => {
+    await handleNewConversation(thread, message, context);
+  });
+
+  /** Private chat with the bot: first messages are not @mentions, so use this handler. */
+  bot.onDirectMessage(async (thread, message, _channel, context) => {
+    if (!allowedChannel(thread.channelId)) {
+      return;
+    }
+    await handleNewConversation(thread, message, context);
   });
 
   bot.onSubscribedMessage(async (thread, message, context) => {
@@ -74,12 +85,13 @@ export function createChatBot(cfg: Config) {
         `You sent ${context.totalSinceLastHandler} messages while I was thinking. Responding to your latest.`,
       );
     }
-    await thread.startTyping();
     const prompt = buildPrompt(message.text, context);
-    await runCursorOnThread(thread, prompt, {
-      apiKey: cfg.CURSOR_API_KEY,
-      cwd: cfg.AGENT_WORKSPACE,
-    });
+    await withRenewingTyping(thread, () =>
+      runCursorOnThread(thread, prompt, {
+        apiKey: cfg.CURSOR_API_KEY,
+        cwd: cfg.AGENT_WORKSPACE,
+      }),
+    );
   });
 
   return { bot, state };

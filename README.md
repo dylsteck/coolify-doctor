@@ -9,7 +9,9 @@ Coolify notifications **do not** go through Chat SDK or Redis — only the direc
 
 Conversational replies use **`@cursor/sdk`** with the **local** runtime and `AGENT_WORKSPACE` as `cwd` (typically a bind-mounted host directory). You are responsible for what that filesystem can access.
 
-Only the configured **`TELEGRAM_CHAT_ID`** is allowed for the Chat bot (same idea as the old `chatGate`).
+Only the configured **`TELEGRAM_CHAT_ID`** is allowed for the Chat bot (same idea as the old `chatGate`). Use the numeric id as before (e.g. `123456789` or `-100…` for groups); the app strips the `telegram:` prefix that the Chat SDK adds.
+
+**Groups:** first message should **@mention** the bot. **Private DMs:** you can write normally; the bot uses the Chat SDK `onDirectMessage` path for the first message.
 
 ## Requirements
 
@@ -19,7 +21,7 @@ Only the configured **`TELEGRAM_CHAT_ID`** is allowed for the Chat bot (same ide
 - **Cursor**: API key (`CURSOR_API_KEY`)
 - **Workspace**: directory path inside the container (`AGENT_WORKSPACE`), usually a volume mount
 
-Optional: **`REDIS_URL`** for persistent Chat SDK state (thread subscriptions and per-thread Cursor `agentId`). Without Redis, state is in-memory (lost on restart).
+**Redis:** the Docker image **always starts a small Redis on `127.0.0.1:6379`** inside the container (not published to a host port). It only holds Chat SDK metadata (thread subscriptions, stored `cursorAgentId`); data is **not** written to disk, so a **full container recreate** clears that state.
 
 ## Setup
 
@@ -60,6 +62,14 @@ Copy `.env.example` to `.env` and fill values.
 
 ## Run locally
 
+Chat state expects **Redis on `127.0.0.1:6379`** (same as the container). Quick option:
+
+```bash
+docker run -d --name coolify-doctor-redis -p 6379:6379 redis:7-alpine
+```
+
+Then:
+
 ```bash
 npm ci
 npm run build
@@ -95,6 +105,8 @@ docker run --rm -p 8080:8080 \
   -e AGENT_WORKSPACE=/workspace \
   coolify-doctor
 ```
+
+The container entrypoint starts **Redis** then runs **Node as user `node`**.
 
 Ensure `TELEGRAM_ADAPTER_MODE=webhook` and your public URL routes `POST /webhooks/telegram` to the container.
 

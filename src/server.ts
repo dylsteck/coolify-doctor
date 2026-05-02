@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import type { RedisStateAdapter } from "@chat-adapter/state-redis";
 import { loadConfig } from "./config.js";
 import { createChatBot } from "./chat/create_bot.js";
 import { sendTelegramHtml } from "./notify/telegram_send_html.js";
@@ -9,6 +10,8 @@ const cfg = loadConfig();
 const { bot: chatBot, state } = createChatBot(cfg);
 
 await state.connect();
+const pong = await (state as RedisStateAdapter).getClient().ping();
+console.log("chat state backend: redis ping =", pong);
 
 const app = new Hono();
 

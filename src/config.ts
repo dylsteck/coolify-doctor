@@ -7,7 +7,6 @@ const envSchema = z.object({
   TELEGRAM_WEBHOOK_SECRET_TOKEN: z.string().min(1),
   WEBHOOK_SECRET: z.string().min(1),
   PORT: z.string().default("8080"),
-  REDIS_URL: z.string().optional(),
   TELEGRAM_ADAPTER_MODE: z.enum(["auto", "webhook", "polling"]).default("webhook"),
   CURSOR_API_KEY: z.string().min(1),
   AGENT_WORKSPACE: z.string().min(1),
