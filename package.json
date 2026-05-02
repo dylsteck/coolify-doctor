@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dylsteck/coolify-doctor.git"
+    "url": "https://github.com/dylsteck/coolify-doctor"
   },
   "keywords": [],
   "author": "",
@@ -20,7 +20,7 @@
   "bugs": {
     "url": "https://github.com/dylsteck/coolify-doctor/issues"
   },
-  "homepage": "https://github.com/dylsteck/coolify-doctor#readme",
+  "homepage": "https://github.com/dylsteck/coolify-doctor",
   "dependencies": {
     "@chat-adapter/state-redis": "^4.27.0",
     "@chat-adapter/telegram": "^4.27.0",

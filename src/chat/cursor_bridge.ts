@@ -2,9 +2,18 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { Run, SDKMessage } from "@cursor/sdk";
 import type { Thread } from "chat";
 
+export const CURSOR_MODEL_ID = "composer-1.5" as const;
+
 export type ThreadState = {
   cursorAgentId?: string;
 };
+
+const RUNTIME_GROUNDING = [
+  "You are reached via the coolify-doctor Telegram bot using the Cursor SDK local runtime.",
+  "Your workspace is local.cwd (AGENT_WORKSPACE): file and shell tools only see that directory tree on the machine running this Node process. Broader host access requires those paths to be bind-mounted under AGENT_WORKSPACE (prefer read-only).",
+  "For Sentinel or Coolify metrics: use files or HTTP endpoints reachable from this process; if nothing is exposed, say briefly to use Coolify Server → Metrics or Sentinel’s API with a Bearer token on a reachable URL. Never invent numbers.",
+  "Use your tools within the workspace as usual.",
+].join(" ");
 
 function extractAssistantText(ev: SDKMessage): string {
   if (ev.type !== "assistant") return "";
@@ -38,12 +47,12 @@ export async function runCursorOnThread(
     agent = agentId
       ? await Agent.resume(agentId, {
           apiKey: opts.apiKey,
-          model: { id: "composer-2" },
+          model: { id: CURSOR_MODEL_ID },
           local: { cwd: opts.cwd, settingSources: [] },
         })
       : await Agent.create({
           apiKey: opts.apiKey,
-          model: { id: "composer-2" },
+          model: { id: CURSOR_MODEL_ID },
           local: { cwd: opts.cwd, settingSources: [] },
         });
   } catch (e) {
@@ -61,7 +70,8 @@ export async function runCursorOnThread(
       await thread.setState({ cursorAgentId: agent.agentId });
     }
 
-    const run = await agent.send(userPrompt);
+    const prompt = agentId ? userPrompt : `${RUNTIME_GROUNDING}\n\n---\n\n${userPrompt}`;
+    const run = await agent.send(prompt);
     await thread.post(runTextStream(run));
     const result = await run.wait();
     console.info("[cursor] run done id=%s status=%s", result.id, result.status);

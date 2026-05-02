@@ -23,6 +23,10 @@ Only the configured **`TELEGRAM_CHAT_ID`** is allowed for the Chat bot (same ide
 
 **Redis:** the Docker image **always starts a small Redis on `127.0.0.1:6379`** inside the container (not published to a host port). It only holds Chat SDK metadata (thread subscriptions, stored `cursorAgentId`); data is **not** written to disk, so a **full container recreate** clears that state.
 
+**Runtime image** includes **`git`** (and CA certs) so Cursor agents can clone over **HTTPS** into `AGENT_WORKSPACE`. SSH clones need extra setup (not in the image by default).
+
+Repository: [github.com/dylsteck/coolify-doctor](https://github.com/dylsteck/coolify-doctor).
+
 ## Setup
 
 ### 1. Telegram bot (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`)
@@ -108,6 +112,10 @@ docker run --rm -p 8080:8080 \
 
 The container entrypoint starts **Redis** then runs **Node as user `node`**.
 
+### Coolify: agent workspace on the host
+
+Under **Configuration → Persistent Storage → Storages**, add a **Directory Mount**: **host path** (e.g. `/` or a subfolder) → **container path** (e.g. `/workspace/host`). Set **`AGENT_WORKSPACE`** to that **container** path. Coolify may not offer a read-only toggle; treat a wide mount as high trust (anyone who can use the bot in `TELEGRAM_CHAT_ID` can drive the agent against that tree).
+
 Ensure `TELEGRAM_ADAPTER_MODE=webhook` and your public URL routes `POST /webhooks/telegram` to the container.
 
 **Note:** Local Cursor agents inside the container need a working Cursor local runtime (network, permissions on `AGENT_WORKSPACE`). Validate in your environment before relying on production traffic.
@@ -137,7 +145,8 @@ src/
   webhook/secrets.ts
   webhook/coolify_webhook.ts
   chat/create_bot.ts        # Chat SDK + Telegram adapter + handlers
-  chat/cursor_bridge.ts     # Agent.create / resume, stream to thread
+  chat/cursor_bridge.ts     # Agent.create / resume, stream to thread (model: composer-1.5)
+  chat/renew_typing.ts      # Refresh Telegram typing while Cursor runs
 ```
 
 See [AGENTS.md](AGENTS.md) for conventions and extension notes.

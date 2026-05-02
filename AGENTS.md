@@ -7,7 +7,7 @@ Guidance for AI agents editing this repo.
 `coolify-doctor` is a **TypeScript** service (Node 22+, Hono) that:
 
 - **Webhook receiver** — `POST /webhook/:secret`: verifies path secret (constant-time), parses Coolify JSON, formats HTML, sends via Telegram Bot API. Returns `401` only on secret mismatch; otherwise **`200` even on internal errors** so Coolify does not retry aggressively on bugs.
-- **Conversational Telegram** — Chat SDK (`chat`, `@chat-adapter/telegram`) with `onNewMention` / `onSubscribedMessage`, optional Redis-backed state, **`@cursor/sdk`** local agents against `AGENT_WORKSPACE`.
+- **Conversational Telegram** — Chat SDK (`chat`, `@chat-adapter/telegram`) with `onNewMention`, `onDirectMessage`, `onSubscribedMessage`, Redis-backed state, **`@cursor/sdk`** local agents against `AGENT_WORKSPACE` (`CURSOR_MODEL_ID` / grounding in `cursor_bridge.ts`). `renew_typing.ts` refreshes typing during long runs.
 
 There are **no slash commands** in this version; infra questions go through natural language + Cursor.
 
@@ -25,6 +25,8 @@ src/
   webhook/coolify_webhook.ts
   chat/create_bot.ts
   chat/cursor_bridge.ts
+  chat/renew_typing.ts
+  chat/*.test.ts
 ```
 
 Use **snake_case** for **file names** (e.g. `cursor_bridge.ts`, `coolify_webhook.ts`).
@@ -61,3 +63,4 @@ Manual run: set env from `.env`, then `npm start` (after `npm run build`).
 - **Telegram webhook** must use the same `secret_token` as `TELEGRAM_WEBHOOK_SECRET_TOKEN`.
 - **Redis**: `docker/entrypoint.sh` always starts Redis on `127.0.0.1:6379` before Node. `create_bot.ts` uses `createRedisState({ url: "redis://127.0.0.1:6379" })`. For local `npm start`, run Redis on that address (see README).
 - **Cursor local in Docker** may need extra validation (permissions, CLI/runtime expectations) depending on image and mount.
+- **Dockerfile** runtime stage installs **`git`** (HTTPS clone). Wide **`AGENT_WORKSPACE`** bind mounts mean **high trust** in who can chat with the bot (`TELEGRAM_CHAT_ID`); Coolify does not always expose read-only mounts — operational risk, not something this repo can enforce from code alone.
