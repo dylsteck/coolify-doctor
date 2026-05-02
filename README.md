@@ -62,6 +62,18 @@ curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
 
 Use a [Cursor API key](https://cursor.com/docs/sdk/typescript) (user or team service account). `AGENT_WORKSPACE` is the directory passed to `local.cwd` for the agent (e.g. `/workspace` in Docker with a volume mount).
 
+### 5b. Coolify API + Sentinel (optional MCP tools)
+
+When both **`COOLIFY_API_ORIGIN`** and **`COOLIFY_API_TOKEN`** are set, the Cursor agent gets a stdio **MCP** child process with **read-only** tools: list/get applications, list deployments, list servers. Tokens are only passed in the MCP child env (never in Telegram prompts). Create tokens under Coolify **Keys & Tokens**; prefer **`read-only`** permission until you intentionally add write flows ([authorization](https://coolify.io/docs/api-reference/authorization)).
+
+- **`COOLIFY_API_ORIGIN`**: Coolify HTTP origin **without** `/api/v1`, e.g. `http://coolify:8000` or `https://coolify.example.com`. The app must **reach** this URL from inside the coolify-doctor container (same Docker network, host gateway, or public URL).
+
+When **`SENTINEL_BASE_URL`** and **`SENTINEL_TOKEN`** are set, additional tools call Sentinel’s REST API (`/api/health`, memory/CPU current + history, container memory history). Base URL is the Sentinel service origin (paths include `/api/...`).
+
+If neither pair is set, the agent still runs with filesystem/shell only; startup logs omit MCP.
+
+**Write / deploy actions:** not implemented in MCP yet. A **`*`** (full) Coolify API token would allow destructive API calls if you later add tools or teach the agent to `curl` with the token—use **read-only** tokens and narrow mounts until you add an explicit admin gate (see [AGENTS.md](AGENTS.md)).
+
 ### 6. Configure
 
 Copy `.env.example` to `.env` and fill values.
@@ -149,6 +161,7 @@ src/
   chat/create_bot.ts        # Chat SDK + Telegram adapter + handlers
   chat/cursor_bridge.ts     # Agent.create / resume, stream to thread (model: composer-1.5)
   chat/renew_typing.ts      # Refresh Telegram typing while Cursor runs
+  mcp/                      # stdio MCP: Coolify + Sentinel read-only tools for Cursor
 ```
 
 See [AGENTS.md](AGENTS.md) for conventions and extension notes.

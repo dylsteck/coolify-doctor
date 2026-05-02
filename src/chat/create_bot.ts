@@ -2,6 +2,7 @@ import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createRedisState } from "@chat-adapter/state-redis";
 import { Chat, type Message, type MessageContext, type Thread } from "chat";
 import type { Config } from "../config.js";
+import { buildMcpServersForAgent } from "../mcp/for_agent.js";
 import { runCursorOnThread, type ThreadState } from "./cursor_bridge.js";
 import { isAllowedTelegramChat } from "./telegram_allowlist.js";
 import { withRenewingTyping } from "./renew_typing.js";
@@ -20,6 +21,8 @@ const HELP_TEXT = [
   "Deploy alerts use Coolify → `/webhook/…` separately from this chat.",
   "",
   "The agent is steered to be **read-mostly** and avoid destructive actions unless you clearly ask.",
+  "",
+  "Optional: set **COOLIFY_API_ORIGIN** + **COOLIFY_API_TOKEN** and/or **SENTINEL_BASE_URL** + **SENTINEL_TOKEN** so the Cursor agent gets MCP tools (see README).",
 ].join("\n");
 
 function commandWord(text: string): string {
@@ -27,6 +30,10 @@ function commandWord(text: string): string {
 }
 
 export function createChatBot(cfg: Config) {
+  const mcpServers = buildMcpServersForAgent(cfg);
+  if (mcpServers) {
+    console.info("[cursor] Coolify/Sentinel MCP enabled for agent (stdio child)");
+  }
   const state = createRedisState({ url: CHAT_REDIS_URL });
   const telegram = createTelegramAdapter({ mode: cfg.TELEGRAM_ADAPTER_MODE });
 
@@ -89,6 +96,7 @@ export function createChatBot(cfg: Config) {
       runCursorOnThread(thread, prompt, {
         apiKey: cfg.CURSOR_API_KEY,
         cwd: cfg.AGENT_WORKSPACE,
+        mcpServers,
       }),
     );
   }
@@ -147,6 +155,7 @@ export function createChatBot(cfg: Config) {
       runCursorOnThread(thread, prompt, {
         apiKey: cfg.CURSOR_API_KEY,
         cwd: cfg.AGENT_WORKSPACE,
+        mcpServers,
       }),
     );
   });

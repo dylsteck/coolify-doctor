@@ -27,6 +27,9 @@ src/
   chat/cursor_bridge.ts
   chat/renew_typing.ts
   chat/*.test.ts
+  mcp/coolify_api.ts
+  mcp/coolify_sentinel_mcp.ts
+  mcp/for_agent.ts
 ```
 
 Use **snake_case** for **file names** (e.g. `cursor_bridge.ts`, `coolify_webhook.ts`).
@@ -38,7 +41,9 @@ Use **snake_case** for **file names** (e.g. `cursor_bridge.ts`, `coolify_webhook
 - **Coolify webhook**: never return non-200 to Coolify for JSON/Telegram failures; log and `200`.
 - **Telegram chat allowlist**: Chat SDK uses `telegram:<chatId>` while env is usually a bare id — `telegram_allowlist.ts` normalizes before compare.
 - **Cursor agents**: use `Agent.create` / `Agent.resume`, always `await agent[Symbol.asyncDispose]()` in a `finally` (or `await using`). Distinguish `CursorAgentError` (startup) vs `run.wait()` `status === "error"` (run failed).
-- **Local agent options**: pass `local: { cwd, settingSources: [] }` for services unless you intentionally want ambient Cursor settings.
+- **Local agent options**: pass `local: { cwd, settingSources: [] }` for services unless you intentionally want ambient Cursor settings. Pass **`mcpServers`** again on **`Agent.resume`** when using MCP (see `buildMcpServersForAgent` in `src/mcp/for_agent.ts`).
+- **Infra MCP**: `src/mcp/coolify_sentinel_mcp.ts` is a stdio MCP entry; tools are read-only. Optional env: `COOLIFY_API_ORIGIN`, `COOLIFY_API_TOKEN`, `SENTINEL_BASE_URL`, `SENTINEL_TOKEN` (see `src/config.ts`). **Do not** add deploy/start/stop tools without product approval and an explicit Telegram/admin gate; prefer **read-only** Coolify API tokens.
+- **Vercel AI SDK / `cursor-ai-sdk-provider`**: not used; stay on **`@cursor/sdk`** directly unless a stable provider adds clear value (see roadmap note in plan).
 - **No unnecessary comments** — only when the why is non-obvious.
 
 ## Adding a Coolify webhook event variant
