@@ -40,9 +40,16 @@ export function createChatBot(cfg: Config) {
 
   async function handleNewConversation(thread: Thread<ThreadState>, message: Message, context?: MessageContext) {
     if (!allowedChannel(thread.channelId)) {
+      console.warn(
+        "[telegram] allowlist reject channelId=%s (raw=%s) TELEGRAM_CHAT_ID=%s",
+        thread.channelId,
+        thread.channelId.replace(/^telegram:/, ""),
+        allowedChatId,
+      );
       await thread.post("This bot only responds in the configured admin chat.");
       return;
     }
+    console.info("[telegram] new conversation thread=%s text_len=%s", thread.id, message.text.length);
     await thread.subscribe();
     if (context?.skipped?.length) {
       await thread.post(
@@ -66,6 +73,11 @@ export function createChatBot(cfg: Config) {
   /** Private chat with the bot: first messages are not @mentions, so use this handler. */
   bot.onDirectMessage(async (thread, message, _channel, context) => {
     if (!allowedChannel(thread.channelId)) {
+      console.warn(
+        "[telegram] DM ignored (wrong chat) channelId=%s TELEGRAM_CHAT_ID=%s",
+        thread.channelId,
+        allowedChatId,
+      );
       return;
     }
     await handleNewConversation(thread, message, context);
@@ -73,8 +85,14 @@ export function createChatBot(cfg: Config) {
 
   bot.onSubscribedMessage(async (thread, message, context) => {
     if (!allowedChannel(thread.channelId)) {
+      console.warn(
+        "[telegram] subscribed msg ignored (wrong chat) channelId=%s TELEGRAM_CHAT_ID=%s",
+        thread.channelId,
+        allowedChatId,
+      );
       return;
     }
+    console.info("[telegram] subscribed message thread=%s text_len=%s", thread.id, message.text.length);
     if (message.text.trim().toLowerCase() === "stop") {
       await thread.unsubscribe();
       await thread.post("Stopped watching this thread.");

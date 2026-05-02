@@ -31,6 +31,7 @@ export async function runCursorOnThread(
 ): Promise<void> {
   const state = await thread.state;
   let agentId = state?.cursorAgentId;
+  console.info("[cursor] run cwd=%s resume=%s prompt_len=%s", opts.cwd, Boolean(agentId), userPrompt.length);
 
   let agent: Awaited<ReturnType<typeof Agent.create>>;
   try {
@@ -47,9 +48,11 @@ export async function runCursorOnThread(
         });
   } catch (e) {
     if (e instanceof CursorAgentError) {
+      console.error("[cursor] agent start failed:", e.message);
       await thread.post(`Could not start Cursor agent: ${e.message}`);
       return;
     }
+    console.error("[cursor] agent start unexpected:", e);
     throw e;
   }
 
@@ -61,14 +64,17 @@ export async function runCursorOnThread(
     const run = await agent.send(userPrompt);
     await thread.post(runTextStream(run));
     const result = await run.wait();
+    console.info("[cursor] run done id=%s status=%s", result.id, result.status);
     if (result.status === "error") {
       await thread.post(`Run finished with error (run ${result.id}). Check logs.`);
     }
   } catch (e) {
     if (e instanceof CursorAgentError) {
+      console.error("[cursor] run error:", e.message);
       await thread.post(`Cursor error: ${e.message}`);
       return;
     }
+    console.error("[cursor] run unexpected:", e);
     throw e;
   } finally {
     await agent[Symbol.asyncDispose]();
