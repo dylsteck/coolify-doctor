@@ -79,7 +79,8 @@ describe("runCursorOnThread", () => {
     expect(thread.setState).toHaveBeenCalledWith({ cursorAgentId: "agent-created" });
     expect(hoisted.send).toHaveBeenCalledTimes(1);
     const firstArg = (hoisted.send as Mock).mock.calls[0][0] as string;
-    expect(firstArg).toContain("coolify-doctor Telegram bot");
+    expect(firstArg).toContain("coolify-doctor");
+    expect(firstArg).toContain("read-mostly");
     expect(firstArg).toContain("---");
     expect(firstArg).toContain("hello");
   });

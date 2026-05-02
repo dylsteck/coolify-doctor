@@ -18,6 +18,8 @@ const HELP_TEXT = [
   "",
   "Groups: @mention the bot to start. DMs: write normally.",
   "Deploy alerts use Coolify → `/webhook/…` separately from this chat.",
+  "",
+  "The agent is steered to be **read-mostly** and avoid destructive actions unless you clearly ask.",
 ].join("\n");
 
 function commandWord(text: string): string {
@@ -71,6 +73,7 @@ export function createChatBot(cfg: Config) {
       return;
     }
     if (cmd === "clear") {
+      // New Telegram thread semantics = new Cursor session: drop stored agent id so we Agent.create instead of resume.
       await thread.setState({}, { replace: true });
       await thread.post("Context cleared. Next message starts a new Cursor agent (no resume).");
       return;
@@ -129,6 +132,7 @@ export function createChatBot(cfg: Config) {
       return;
     }
     if (cmd === "clear") {
+      // New Telegram thread semantics = new Cursor session: drop stored agent id so we Agent.create instead of resume.
       await thread.setState({}, { replace: true });
       await thread.post("Context cleared. Next message starts a new Cursor agent (no resume).");
       return;
