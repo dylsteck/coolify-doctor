@@ -9,6 +9,21 @@ import { withRenewingTyping } from "./renew_typing.js";
 /** In Docker, entrypoint starts Redis here before Node. Local dev: run Redis on 6379 or use Docker. */
 const CHAT_REDIS_URL = "redis://127.0.0.1:6379";
 
+const HELP_TEXT = [
+  "**coolify-doctor** (Telegram + Cursor)",
+  "",
+  "**help** — this message",
+  "**clear** — forget the saved Cursor agent for this thread (fresh session on next message)",
+  "**stop** — unsubscribe this thread (groups: @mention again to resume)",
+  "",
+  "Groups: @mention the bot to start. DMs: write normally.",
+  "Deploy alerts use Coolify → `/webhook/…` separately from this chat.",
+].join("\n");
+
+function commandWord(text: string): string {
+  return text.trim().toLowerCase();
+}
+
 export function createChatBot(cfg: Config) {
   const state = createRedisState({ url: CHAT_REDIS_URL });
   const telegram = createTelegramAdapter({ mode: cfg.TELEGRAM_ADAPTER_MODE });
@@ -50,6 +65,16 @@ export function createChatBot(cfg: Config) {
       return;
     }
     console.info("[telegram] new conversation thread=%s text_len=%s", thread.id, message.text.length);
+    const cmd = commandWord(message.text);
+    if (cmd === "help") {
+      await thread.post({ markdown: HELP_TEXT });
+      return;
+    }
+    if (cmd === "clear") {
+      await thread.setState({}, { replace: true });
+      await thread.post("Context cleared. Next message starts a new Cursor agent (no resume).");
+      return;
+    }
     await thread.subscribe();
     if (context?.skipped?.length) {
       await thread.post(
@@ -93,9 +118,19 @@ export function createChatBot(cfg: Config) {
       return;
     }
     console.info("[telegram] subscribed message thread=%s text_len=%s", thread.id, message.text.length);
-    if (message.text.trim().toLowerCase() === "stop") {
+    const cmd = commandWord(message.text);
+    if (cmd === "stop") {
       await thread.unsubscribe();
       await thread.post("Stopped watching this thread.");
+      return;
+    }
+    if (cmd === "help") {
+      await thread.post({ markdown: HELP_TEXT });
+      return;
+    }
+    if (cmd === "clear") {
+      await thread.setState({}, { replace: true });
+      await thread.post("Context cleared. Next message starts a new Cursor agent (no resume).");
       return;
     }
     if (context?.skipped?.length) {

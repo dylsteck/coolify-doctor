@@ -7,7 +7,7 @@ Guidance for AI agents editing this repo.
 `coolify-doctor` is a **TypeScript** service (Node 22+, Hono) that:
 
 - **Webhook receiver** — `POST /webhook/:secret`: verifies path secret (constant-time), parses Coolify JSON, formats HTML, sends via Telegram Bot API. Returns `401` only on secret mismatch; otherwise **`200` even on internal errors** so Coolify does not retry aggressively on bugs.
-- **Conversational Telegram** — Chat SDK (`chat`, `@chat-adapter/telegram`) with `onNewMention`, `onDirectMessage`, `onSubscribedMessage`, Redis-backed state, **`@cursor/sdk`** local agents against `AGENT_WORKSPACE` (`CURSOR_MODEL_ID` / grounding in `cursor_bridge.ts`). `renew_typing.ts` refreshes typing during long runs.
+- **Conversational Telegram** — Chat SDK (`chat`, `@chat-adapter/telegram`) with `onNewMention`, `onDirectMessage`, `onSubscribedMessage`, Redis-backed state, **`@cursor/sdk`** local agents against `AGENT_WORKSPACE` (`CURSOR_MODEL_ID` / grounding in `cursor_bridge.ts`). `renew_typing.ts` refreshes typing during long runs. User messages **`help`**, **`clear`** (reset thread state via `setState({}, { replace: true })`), **`stop`** (unsubscribe) are handled in `create_bot.ts` before Cursor runs.
 
 There are **no slash commands** in this version; infra questions go through natural language + Cursor.
 

@@ -13,6 +13,8 @@ Only the configured **`TELEGRAM_CHAT_ID`** is allowed for the Chat bot (same ide
 
 **Groups:** first message should **@mention** the bot. **Private DMs:** you can write normally; the bot uses the Chat SDK `onDirectMessage` path for the first message.
 
+**Chat commands** (message is only that word, any case): **`help`** — hints; **`clear`** — clear stored Cursor agent id for this thread (next reply starts `Agent.create` again); **`stop`** — unsubscribe the thread.
+
 ## Requirements
 
 - **Node 22+** (local or Docker)
