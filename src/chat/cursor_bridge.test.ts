@@ -63,7 +63,7 @@ describe("runCursorOnThread", () => {
     });
   });
 
-  it("creates agent with composer-1.5 and prepends grounding on first turn", async () => {
+  it("creates agent with default model and prepends grounding on first turn", async () => {
     const thread = mockThread({ state: {} });
     await runCursorOnThread(thread, "hello", { apiKey: "k", cwd: "/w" });
 

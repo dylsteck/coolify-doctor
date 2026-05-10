@@ -2,7 +2,7 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { AgentOptions, Run, SDKMessage } from "@cursor/sdk";
 import type { Thread } from "chat";
 
-export const CURSOR_MODEL_ID = "composer-1.5" as const;
+export const CURSOR_MODEL_ID = "default" as const;
 
 export type ThreadState = {
   cursorAgentId?: string;
