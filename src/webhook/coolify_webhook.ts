@@ -1,6 +1,11 @@
 import type { CoolifyEvent } from "../coolify/event.js";
 import { formatEvent } from "../coolify/format.js";
 import { secretsEqual } from "./secrets.js";
+import {
+  appendInsightHtml,
+  getWebhookInsight,
+  type WebhookInsightOpts,
+} from "./webhook_cursor_insight.js";
 
 export const MAX_BODY = 1 << 20;
 
@@ -8,12 +13,20 @@ export type HtmlSender = {
   sendHTML(html: string): Promise<void>;
 };
 
+export type CoolifyWebhookDeps = {
+  sender: HtmlSender;
+  insight?: WebhookInsightOpts;
+};
+
 export async function handleCoolifyWebhook(
   secret: string,
   expectedSecret: string,
   request: Request,
-  sender: HtmlSender,
+  senderOrDeps: HtmlSender | CoolifyWebhookDeps,
 ): Promise<Response> {
+  const deps: CoolifyWebhookDeps =
+    "sendHTML" in senderOrDeps ? { sender: senderOrDeps } : senderOrDeps;
+  const { sender, insight } = deps;
   if (!secretsEqual(expectedSecret, secret)) {
     return new Response("unauthorized", { status: 401 });
   }
@@ -35,8 +48,16 @@ export async function handleCoolifyWebhook(
     return new Response(null, { status: 200 });
   }
 
-  const html = formatEvent(ev, text);
+  let html = formatEvent(ev, text);
   console.log("webhook: event=%s success=%s", ev.event, ev.success);
+  if (insight) {
+    try {
+      const note = await getWebhookInsight(ev, text, insight);
+      if (note) html = appendInsightHtml(html, note);
+    } catch (e) {
+      console.warn("webhook insight:", e);
+    }
+  }
   try {
     await sender.sendHTML(html);
   } catch (e) {

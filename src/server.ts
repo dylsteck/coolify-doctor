@@ -19,10 +19,16 @@ app.get("/health", (c) => c.text("ok"));
 
 app.post("/webhook/:secret", async (c) => {
   const secret = c.req.param("secret");
-  const sender = {
-    sendHTML: (html: string) => sendTelegramHtml(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_ID, html),
-  };
-  return handleCoolifyWebhook(secret, cfg.WEBHOOK_SECRET, c.req.raw, sender);
+  return handleCoolifyWebhook(secret, cfg.WEBHOOK_SECRET, c.req.raw, {
+    sender: {
+      sendHTML: (html: string) =>
+        sendTelegramHtml(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_CHAT_ID, html),
+    },
+    insight: {
+      apiKey: cfg.CURSOR_API_KEY,
+      cwd: cfg.AGENT_WORKSPACE,
+    },
+  });
 });
 
 app.post("/webhooks/telegram", (c) => {

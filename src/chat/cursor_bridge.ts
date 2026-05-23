@@ -1,8 +1,9 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
 import type { AgentOptions, Run, SDKMessage } from "@cursor/sdk";
 import type { Thread } from "chat";
+import { CURSOR_MODEL_ID } from "../cursor/models.js";
 
-export const CURSOR_MODEL_ID = "default" as const;
+export { CURSOR_MODEL_ID };
 
 export type ThreadState = {
   cursorAgentId?: string;

@@ -159,7 +159,7 @@ src/
   webhook/secrets.ts
   webhook/coolify_webhook.ts
   chat/create_bot.ts        # Chat SDK + Telegram adapter + handlers
-  chat/cursor_bridge.ts     # Agent.create / resume, stream to thread (model: composer-1.5)
+  chat/cursor_bridge.ts     # Agent.create / resume, stream to thread (model: composer-2.5)
   chat/renew_typing.ts      # Refresh Telegram typing while Cursor runs
   mcp/                      # stdio MCP: Coolify + Sentinel read-only tools for Cursor
 ```

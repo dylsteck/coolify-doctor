@@ -24,7 +24,7 @@
   "dependencies": {
     "@chat-adapter/state-redis": "^4.27.0",
     "@chat-adapter/telegram": "^4.27.0",
-    "@cursor/sdk": "^1.0.12",
+    "@cursor/sdk": "^1.0.13",
     "@hono/node-server": "^2.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chat": "^4.27.0",
