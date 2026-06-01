@@ -19,6 +19,20 @@ export async function bearerGet(url: string, token: string): Promise<BearerFetch
   return { ok: res.ok, status: res.status, body };
 }
 
+export async function bearerPost(url: string, token: string, body?: unknown): Promise<BearerFetchResult> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  const text = await res.text();
+  return { ok: res.ok, status: res.status, body: text };
+}
+
 /** Sentinel paths are under `/api/...`; base is e.g. `http://host:8080`. */
 export function sentinelApiUrl(base: string, apiPath: string): string {
   const b = base.replace(/\/$/, "");

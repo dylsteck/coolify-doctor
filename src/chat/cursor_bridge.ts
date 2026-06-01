@@ -19,6 +19,9 @@ function buildGrounding(hasInfraMcp: boolean): string {
     lines.push(
       "Infra MCP tools (**coolify_***, **sentinel_***) are available: use them for Coolify API and Sentinel metrics truth. Prefer tools over guessing; never invent deployment status or metric numbers.",
     );
+    lines.push(
+      "Action tools (**coolify_deploy_***, **coolify_restart_***, **coolify_stop_***, **coolify_start_***) are available but require explicit operator confirmation before use — always describe what you are about to do and wait for the user to confirm.",
+    );
   } else {
     lines.push(
       "No Coolify/Sentinel MCP configured: use files and shell only. For dashboard parity, configure COOLIFY_API_ORIGIN+COOLIFY_API_TOKEN and/or SENTINEL_BASE_URL+SENTINEL_TOKEN on the server. Never invent numbers.",

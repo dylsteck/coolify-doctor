@@ -12,7 +12,7 @@ const envSchema = z.object({
   AGENT_WORKSPACE: z.string().min(1),
   /** e.g. `http://coolify:8000` — Coolify HTTP API origin (no `/api/v1` suffix). */
   COOLIFY_API_ORIGIN: z.string().optional(),
-  /** Bearer token from Coolify Keys & Tokens (prefer read-only until write tools exist). */
+  /** Bearer token from Coolify Keys & Tokens. Needs write scope for action tools (deploy, restart, stop, start). */
   COOLIFY_API_TOKEN: z.string().optional(),
   /** Sentinel HTTP origin e.g. `http://host:8080` (paths use `/api/...`). */
   SENTINEL_BASE_URL: z.string().optional(),
